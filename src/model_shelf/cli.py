@@ -198,7 +198,7 @@ def _print_shelf_contents(root: Path) -> None:
             continue
         publishers = sorted(
             p for p in sub.iterdir()
-            if p.is_dir() and not p.name.startswith("._")
+            if p.is_dir() and not p.name.startswith(".")
         )
         if not publishers:
             print("    (empty)")
