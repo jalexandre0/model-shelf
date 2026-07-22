@@ -37,6 +37,16 @@ from model_shelf.import_model import _sha256_file  # noqa: PLC2701
 _KNOWN_OLLAMA_BLOBS = Path.home() / ".ollama" / "models" / "blobs"
 _KNOWN_HF_CACHE = Path.home() / ".cache" / "huggingface" / "hub"
 
+# Only deduplicate model weight files, never metadata.
+# .gitattributes, README.md, config.json, tokenizer.json etc. are boilerplate
+# that happens to be identical across models — hardlinking them breaks dirs.
+_WEIGHT_EXTENSIONS = frozenset({".gguf", ".safetensors", ".bin"})
+
+
+def _is_weight_file(path: Path) -> bool:
+    """Return True if *path* is a model weight file, not metadata."""
+    return path.suffix.lower() in _WEIGHT_EXTENSIONS
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -167,6 +177,8 @@ def _collect_shelf_files(shelf_root: Path) -> list[tuple[Path, int, str]]:
             if not f.is_file() or f.name.startswith("._"):
                 continue
             if ".cache" in f.parts:
+                continue
+            if not _is_weight_file(f):
                 continue
             try:
                 st = f.stat()
