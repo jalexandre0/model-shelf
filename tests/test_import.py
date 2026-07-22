@@ -31,6 +31,41 @@ def test_detect_format_gguf_file(tmp_path: Path):
     assert _detect_format_from_path(source) == "gguf"
 
 
+def test_detect_format_gguf_no_extension(tmp_path: Path):
+    """Ollama blobs have no extension — detect by GGUF magic bytes."""
+    source = tmp_path / "sha256-abc123"
+    source.write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
+    assert _detect_format_from_path(source) == "gguf"
+
+
+def test_is_gguf_file_valid(tmp_path: Path):
+    from model_shelf.import_model import _is_gguf_file
+    f = tmp_path / "model.gguf"
+    f.write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
+    assert _is_gguf_file(f) is True
+
+
+def test_is_gguf_file_not_gguf(tmp_path: Path):
+    from model_shelf.import_model import _is_gguf_file
+    f = tmp_path / "model.gguf"
+    f.write_bytes(b"not a gguf file")
+    assert _is_gguf_file(f) is False
+
+
+def test_is_gguf_file_empty(tmp_path: Path):
+    from model_shelf.import_model import _is_gguf_file
+    f = tmp_path / "empty.gguf"
+    f.write_bytes(b"")
+    assert _is_gguf_file(f) is False
+
+
+def test_detect_format_gguf_blob_without_extension(tmp_path: Path):
+    """Regression: extensionless file with GGUF magic must be detected."""
+    source = tmp_path / "sha256-deadbeef"
+    source.write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
+    assert _detect_format_from_path(source) == "gguf"
+
+
 def test_detect_format_mlx_dir(tmp_path: Path):
     source = tmp_path / "model-dir"
     source.mkdir()

@@ -124,13 +124,17 @@ def _detect_format_from_path(source: Path) -> str:
     """Detect model format from a local file or directory.
 
     Rules:
-        1. File with GGUF magic bytes → "gguf"
-        2. Directory with config.json + *.safetensors → "safetensors"
-        3. Directory with config.json but no safetensors files → "mlx"
-        4. Directory without config.json → ValueError
-        5. Non-GGUF file → ValueError
+        1. File ending in .gguf → "gguf"
+        2. File without extension but with GGUF magic bytes → "gguf"
+           (Ollama blobs, content-addressed storage)
+        3. Directory with config.json + *.safetensors → "safetensors"
+        4. Directory with config.json but no safetensors files → "mlx"
+        5. Directory without config.json → ValueError
+        6. Other files → ValueError
     """
     if source.is_file():
+        if source.suffix.lower() == ".gguf":
+            return "gguf"
         if _is_gguf_file(source):
             return "gguf"
         raise ValueError(
