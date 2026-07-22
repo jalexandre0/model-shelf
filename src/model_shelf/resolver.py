@@ -177,8 +177,26 @@ def shelf_path_snapshot(shelf_root: Path, repo_id: str, fmt: str) -> Path:
 
 
 def _looks_like_model_dir(path: Path) -> bool:
-    """Curated shelf hit for directory formats: dir exists with a config.json inside."""
-    return path.is_dir() and (path / "config.json").is_file()
+    """Curated shelf hit for directory formats: dir exists with a valid config.json
+    and at least one weight file (not just metadata from an incomplete download)."""
+    if not path.is_dir():
+        return False
+    config = path / "config.json"
+    if not config.is_file():
+        return False
+    try:
+        config_text = config.read_text()
+        if not config_text.strip():
+            return False
+        __import__("json").loads(config_text)
+    except (OSError, ValueError):
+        return False
+    # At least one weight file must exist (not just metadata).
+    for f in path.iterdir():
+        if f.suffix.lower() in (".gguf", ".safetensors", ".bin"):
+            if f.stat().st_size > 0:
+                return True
+    return False
 
 
 def list_shelf_candidates(config: Config) -> list[Path]:
@@ -266,6 +284,17 @@ def resolve_model(
     return _resolve_snapshot(config, repo_id, fmt)
 
 
+def _is_valid_gguf(path: Path) -> bool:
+    """Return True if *path* looks like a complete GGUF file, not an incomplete download."""
+    try:
+        if path.stat().st_size == 0:
+            return False
+        with open(path, "rb") as f:
+            return f.read(4) == b"GGUF"
+    except OSError:
+        return False
+
+
 def _resolve_gguf(config: Config, repo_id: str, quant: str) -> ResolveResult:
     """Check every available shelf for the model. Download into the primary on miss."""
     checks: list[dict] = []
@@ -274,11 +303,14 @@ def _resolve_gguf(config: Config, repo_id: str, quant: str) -> ResolveResult:
         candidate = shelf_path_gguf(parent, repo_id, quant)
         shelf = parent / "gguf"
         if candidate.is_file():
-            checks.append({"location": "shelf", "root": str(shelf), "result": "hit"})
-            return ResolveResult(
-                status="found", source="local_shelf", format="gguf",
-                path=candidate, checks=checks,
-            )
+            if _is_valid_gguf(candidate):
+                checks.append({"location": "shelf", "root": str(shelf), "result": "hit"})
+                return ResolveResult(
+                    status="found", source="local_shelf", format="gguf",
+                    path=candidate, checks=checks,
+                )
+            else:
+                checks.append({"location": "shelf", "root": str(shelf), "result": "incomplete"})
         checks.append({"location": "shelf", "root": str(shelf), "result": "miss"})
 
     if not config.allow_downloads:

@@ -86,7 +86,7 @@ def test_gguf_shelf_hit(tmp_path: Path):
     target = cfg.shelf_root / "gguf" / "Qwen" / "Qwen3-14B-GGUF"
     target.mkdir(parents=True)
     f = target / "Qwen3-14B-Q4_K_M.gguf"
-    f.write_bytes(b"x")
+    f.write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
 
     result = resolve_model(cfg, "Qwen/Qwen3-14B-GGUF", quant="Q4_K_M")
 
@@ -118,7 +118,7 @@ def test_mlx_shelf_hit_requires_config_json(tmp_path: Path):
     cfg = _config(tmp_path)
     target = cfg.shelf_root / "mlx" / "mlx-community" / "Qwen3-14B-4bit"
     target.mkdir(parents=True)
-    (target / "config.json").write_text("{}")
+    (target / "config.json").write_text("{}"); (target / "model.safetensors").write_bytes(b"weights")
 
     result = resolve_model(cfg, "mlx-community/Qwen3-14B-4bit")
 
@@ -144,7 +144,7 @@ def test_safetensors_shelf_hit(tmp_path: Path):
     cfg = _config(tmp_path)
     target = cfg.shelf_root / "safetensors" / "Qwen" / "Qwen3-14B"
     target.mkdir(parents=True)
-    (target / "config.json").write_text("{}")
+    (target / "config.json").write_text("{}"); (target / "model.safetensors").write_bytes(b"weights")
 
     result = resolve_model(cfg, "Qwen/Qwen3-14B")
 
@@ -157,7 +157,7 @@ def test_format_override(tmp_path: Path):
     cfg = _config(tmp_path)
     target = cfg.shelf_root / "safetensors" / "Qwen" / "Qwen3-14B-GGUF"
     target.mkdir(parents=True)
-    (target / "config.json").write_text("{}")
+    (target / "config.json").write_text("{}"); (target / "model.safetensors").write_bytes(b"weights")
 
     result = resolve_model(cfg, "Qwen/Qwen3-14B-GGUF", format="safetensors")
 
@@ -239,7 +239,7 @@ def test_gguf_lookup_hits_additional_shelf(tmp_path: Path, monkeypatch):
     primary.mkdir()
     target = extra / "gguf" / "Qwen" / "Qwen3-14B-GGUF"
     target.mkdir(parents=True)
-    (target / "Qwen3-14B-Q4_K_M.gguf").write_bytes(b"x")
+    (target / "Qwen3-14B-Q4_K_M.gguf").write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
     _patch_candidates(monkeypatch, [primary, extra])
 
     cfg = Config(shelf_root=primary, allow_downloads=False)
@@ -257,7 +257,7 @@ def test_gguf_lookup_prefers_primary_when_both_have_file(tmp_path: Path, monkeyp
     for parent in (primary, extra):
         target = parent / "gguf" / "Qwen" / "Qwen3-14B-GGUF"
         target.mkdir(parents=True)
-        (target / "Qwen3-14B-Q4_K_M.gguf").write_bytes(b"x")
+        (target / "Qwen3-14B-Q4_K_M.gguf").write_bytes(b"GGUF\x03\x00\x00\x00" + b"\x00" * 100)
     _patch_candidates(monkeypatch, [primary, extra])
 
     cfg = Config(shelf_root=primary, allow_downloads=False)
@@ -273,7 +273,7 @@ def test_mlx_lookup_hits_additional_shelf(tmp_path: Path, monkeypatch):
     primary.mkdir()
     target = extra / "mlx" / "mlx-community" / "Qwen3-14B-4bit"
     target.mkdir(parents=True)
-    (target / "config.json").write_text("{}")
+    (target / "config.json").write_text("{}"); (target / "model.safetensors").write_bytes(b"weights")
     _patch_candidates(monkeypatch, [primary, extra])
 
     cfg = Config(shelf_root=primary, allow_downloads=False)
