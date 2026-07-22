@@ -20,6 +20,7 @@ from model_shelf.resolver import (
     list_shelf_candidates,
     resolve_model,
 )
+from model_shelf.import_model import ImportResult, import_model
 from model_shelf.search import find_models
 
 
@@ -43,6 +44,38 @@ def _print_result_pretty(repo_id: str, result) -> None:
     print(f"  source      {result.source}")
     print(f"  format      {result.format}")
     print(f"  path        {result.path}")
+
+
+def _print_import_pretty(result: ImportResult) -> None:
+    for c in result.checks:
+        print(f"  {c.get('step', ''):<20} {c.get('detail', '')}")
+    print()
+    print(f"  status      {result.status}")
+    print(f"  repo_id     {result.repo_id}")
+    print(f"  format      {result.format}")
+    print(f"  sha256      {result.sha256[:16]}...")
+    if result.path:
+        print(f"  path        {result.path}")
+    print(f"  message     {result.message}")
+
+
+def cmd_import(args: argparse.Namespace, cfg: Config) -> int:
+    check_storage_available(cfg)
+    result = import_model(
+        cfg,
+        Path(args.path),
+        format=args.format,
+        org=args.org,
+        repo=args.repo,
+        quant=args.quant,
+        hardlink=not args.no_hardlink,
+        dry_run=not args.execute,
+    )
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        _print_import_pretty(result)
+    return 0
 
 
 def cmd_resolve(args: argparse.Namespace, cfg: Config) -> int:
@@ -285,6 +318,28 @@ def main(argv: list[str] | None = None) -> int:
     p_find.add_argument("--limit", type=int, default=10, help="max results (default 10)")
     p_find.add_argument("--json", action="store_true", help="emit JSON")
 
+    p_import = sub.add_parser("import", help="import a local model into the shelf")
+    p_import.add_argument("path", help="path to .gguf file or model directory")
+    p_import.add_argument(
+        "--format", choices=SUPPORTED_FORMATS, default=None,
+        help="model format (auto-detected if omitted)",
+    )
+    p_import.add_argument("--org", default=None, help="override publisher/org name")
+    p_import.add_argument("--repo", default=None, help="override repo/model name")
+    p_import.add_argument(
+        "--quant", default=None,
+        help="quant tag for GGUF (auto-detected if omitted)",
+    )
+    p_import.add_argument(
+        "--no-hardlink", action="store_true",
+        help="always copy, never hardlink (even on same filesystem)",
+    )
+    p_import.add_argument(
+        "--execute", action="store_true",
+        help="actually perform the import (default is dry-run)",
+    )
+    p_import.add_argument("--json", action="store_true", help="emit JSON")
+
     p_init = sub.add_parser(
         "init",
         help="create the shelf directory (optionally at a new path)",
@@ -301,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "resolve":
             return cmd_resolve(args, cfg)
+        if args.command == "import":
+            return cmd_import(args, cfg)
         if args.command == "list":
             return cmd_list(args, cfg)
         if args.command == "init":
