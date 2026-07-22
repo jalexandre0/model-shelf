@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import shutil
 import sys
 import tempfile
@@ -24,6 +25,62 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from model_shelf.resolver import SUPPORTED_FORMATS, Config, check_storage_available
+
+
+# ---------------------------------------------------------------------------
+# GGUF file type → quant string mapping (from llama.cpp gguf.py spec)
+# ---------------------------------------------------------------------------
+
+FILETYPE_MAP: dict[int, str] = {
+    0: "F32",
+    1: "F16",
+    2: "Q4_0",
+    3: "Q4_1",
+    4: "Q4_0",   # Q4_0 alt variant (rare)
+    5: "Q4_1",   # Q4_1 alt variant (rare)
+    6: "Q4_0",   # Q4_0 alt variant (rare)
+    7: "Q8_0",
+    8: "Q8_1",
+    9: "IQ2_XXS",  # old IQ2_XXS (rare)
+    10: "Q2_K",
+    11: "Q3_K_S",
+    12: "Q3_K_M",
+    13: "Q3_K_L",
+    14: "Q4_K_S",
+    15: "Q4_K_M",
+    16: "Q5_K_S",
+    17: "Q5_K_M",
+    18: "Q6_K",
+    19: "Q8_K",
+    20: "IQ2_XXS",
+    21: "IQ2_XS",
+    22: "IQ3_XXS",
+    23: "IQ1_S",
+    24: "IQ4_XS",
+    25: "IQ4_NL",
+    26: "IQ3_S",
+    27: "IQ3_M",
+    28: "IQ2_S",
+    29: "IQ2_M",
+    30: "IQ4_K_S",
+    31: "IQ4_K_M",
+}
+
+# GGUF value element sizes in bytes, keyed by type_id
+_GGUF_ELEM_SIZES: dict[int, int] = {
+    0: 1,    # uint8
+    1: 1,    # int8
+    2: 2,    # uint16
+    3: 2,    # int16
+    4: 4,    # uint32
+    5: 4,    # int32
+    6: 4,    # float32
+    7: 8,    # float64 (deprecated, mapping to type_id 10)
+    8: 0,    # string (special: length-prefixed)
+    9: 0,    # array (special: type + count + items)
+    10: 8,   # float64
+    11: 1,   # bool
+}
 
 
 @dataclass
@@ -244,8 +301,9 @@ def _detect_quant_from_filename(path: Path) -> str | None:
     """
     name = path.stem.lower()
     patterns = [
-        r"(q[2-8]_[klo]_[ms])",     # Q4_K_M, Q5_K_L, etc.
+        r"(q[2-8]_[klo]_[ms])",     # Q4_K_M, Q5_K_L (3-segment, MUST come first)
         r"(q[2-8]_[0-1])",          # Q5_0, Q8_0
+        r"(q[2-8]_k)(?![a-z0-9])",  # Q2_K, Q6_K, Q8_K (2-segment, no trailing char)
         r"(iq[1-4]_[a-z]+)",         # IQ3_XXS, IQ4_XS
         r"(f16|f32|fp16|fp32)",     # F16, F32
     ]
@@ -253,6 +311,154 @@ def _detect_quant_from_filename(path: Path) -> str | None:
         m = re.search(pat, name)
         if m:
             return m.group(1).upper()
+    return None
+
+
+def _quant_from_gguf_header(path: Path) -> str | None:
+    """Parse GGUF v2/v3 binary header to extract general.file_type.
+
+    Returns the quant string from FILETYPE_MAP, or None if not found / not a GGUF.
+    Never raises — catches OSError, struct.error, UnicodeDecodeError.
+    """
+    try:
+        with open(path, "rb") as f:
+            # 1. Magic
+            magic = f.read(4)
+            if magic != b"GGUF":
+                return None
+
+            # 2. Version (uint32 LE)
+            version_raw = f.read(4)
+            if len(version_raw) < 4:
+                return None
+            version = struct.unpack("<I", version_raw)[0]
+            if version not in (2, 3):
+                return None
+
+            # 3. Tensor count (uint64 LE)
+            f.read(8)  # skip tensor_count (uint64 LE)
+
+            # 4. KV count (uint64 LE)
+            kv_raw = f.read(8)
+            if len(kv_raw) < 8:
+                return None
+            kv_count = struct.unpack("<Q", kv_raw)[0]
+
+            # 5. Iterate KV pairs
+            for _ in range(kv_count):
+                key_len_raw = f.read(8)
+                if len(key_len_raw) < 8:
+                    return None
+                key_len = struct.unpack("<Q", key_len_raw)[0]
+                key_raw = f.read(key_len)
+                if len(key_raw) < key_len:
+                    return None
+                key = key_raw.decode("utf-8")
+
+                type_raw = f.read(4)
+                if len(type_raw) < 4:
+                    return None
+                type_id = struct.unpack("<I", type_raw)[0]
+
+                if key == "general.file_type" and type_id == 4:  # uint32
+                    val_raw = f.read(4)
+                    if len(val_raw) < 4:
+                        return None
+                    file_type = struct.unpack("<I", val_raw)[0]
+                    return FILETYPE_MAP.get(file_type)
+
+                # Skip value by type_id
+                _skip_gguf_value(f, type_id)
+
+            return None
+    except (OSError, struct.error, UnicodeDecodeError):
+        return None
+
+
+def _skip_gguf_value(f, type_id: int) -> None:
+    """Skip a single GGUF value of the given type_id, consuming bytes from f."""
+    if type_id == 8:  # string
+        str_len_raw = f.read(8)
+        if len(str_len_raw) >= 8:
+            str_len = struct.unpack("<Q", str_len_raw)[0]
+            f.read(str_len)
+    elif type_id == 9:  # array
+        elem_type_raw = f.read(4)
+        count_raw = f.read(8)
+        if len(elem_type_raw) >= 4 and len(count_raw) >= 8:
+            elem_type = struct.unpack("<I", elem_type_raw)[0]
+            count = struct.unpack("<Q", count_raw)[0]
+            esize = _GGUF_ELEM_SIZES.get(elem_type, 4)
+            f.read(count * esize)
+    else:
+        size = _GGUF_ELEM_SIZES.get(type_id, 0)
+        if size > 0:
+            f.read(size)
+
+
+def _quant_from_config_json(path: Path) -> str | None:
+    """Extract quantization info from path/config.json (MLX or safetensors dir).
+
+    Priority chain:
+        1. MLX quantization.bits → "Q{bits}"
+        2. Quantization config (GPTQ, AWQ, etc.) → "{METHOD}-{bits}bit"
+        3. torch_dtype → mapped to "F16"/"BF16"/"F32"
+        4. None of above → None
+
+    Never raises — returns None for missing file, invalid JSON, or no match.
+    """
+    config_file = path / "config.json"
+    try:
+        if not config_file.is_file():
+            return None
+        data = json.loads(config_file.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    # 1. MLX quantization
+    quant_obj = data.get("quantization")
+    if isinstance(quant_obj, dict) and "bits" in quant_obj:
+        bits = quant_obj["bits"]
+        return f"Q{bits}"
+
+    # 2. Quantization config (GPTQ, AWQ, etc.)
+    quant_cfg = data.get("quantization_config")
+    if isinstance(quant_cfg, dict):
+        method = quant_cfg.get("quant_method", "")
+        bits = quant_cfg.get("bits")
+        if method and bits is not None:
+            return f"{method.upper()}-{bits}bit"
+
+    # 3. torch_dtype
+    dtype = data.get("torch_dtype")
+    if isinstance(dtype, str):
+        dtype_map: dict[str, str] = {
+            "float16": "F16",
+            "bfloat16": "BF16",
+            "float32": "F32",
+        }
+        if dtype in dtype_map:
+            return dtype_map[dtype]
+
+    return None
+
+
+def detect_quant(source: Path, fmt: str) -> str | None:
+    """Unified quant detection — dispatches based on format.
+
+    Priority chain per format:
+        gguf:        1. GGUF header → 2. filename fallback
+        mlx:          config.json
+        safetensors:  config.json
+        else:         None
+    """
+    if fmt == "gguf":
+        from_header = _quant_from_gguf_header(source)
+        if from_header is not None:
+            return from_header
+        return _detect_quant_from_filename(source)
+    if fmt in ("mlx", "safetensors"):
+        return _quant_from_config_json(source)
     return None
 
 
@@ -304,8 +510,8 @@ def _resolve_metadata(
     """Infer org/repo/quant. Returns (org_name, repo_name, repo_id, quant)."""
     org_name, repo_name = _infer_org_repo(source, fmt, org, repo)
     repo_id = f"{org_name}/{repo_name}"
-    if fmt == "gguf" and quant is None:
-        quant = _detect_quant_from_filename(source)
+    if quant is None:
+        quant = detect_quant(source, fmt)
         if quant:
             checks.append({"step": "detect-quant", "detail": f"auto-detected {quant}"})
     return org_name, repo_name, repo_id, quant
@@ -353,7 +559,7 @@ def _build_manifest_entry(
     return {
         "repo_id": repo_id,
         "format": fmt,
-        "quant": quant if fmt == "gguf" else None,
+        "quant": quant,
         "sha256": sha256,
         "files": files,
         "source": "imported",
