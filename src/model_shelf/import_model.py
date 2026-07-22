@@ -19,8 +19,6 @@ import re
 import struct
 import shutil
 import sys
-import tempfile
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -170,40 +168,9 @@ def _sha256_directory(path: Path) -> str:
 # Manifest helpers
 # ---------------------------------------------------------------------------
 
-def _load_manifest(shelf_root: Path) -> dict:
-    """Load manifest.json from shelf_root. Returns empty dict if missing."""
-    manifest_path = shelf_root / "manifest.json"
-    if not manifest_path.is_file():
-        return {"version": 1, "updated": "", "models": {}}
-    manifest = json.loads(manifest_path.read_text())
-    if manifest.get("version") != 1:
-        raise ValueError(
-            f"unsupported manifest version: {manifest.get('version')}; "
-            "expected version 1"
-        )
-    return manifest
-
-
-def _save_manifest(shelf_root: Path, data: dict) -> None:
-    """Atomic write: manifest.json.tmp → os.replace → manifest.json."""
-    manifest_path = shelf_root / "manifest.json"
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w",
-        dir=str(shelf_root),
-        prefix="manifest.",
-        suffix=".tmp",
-        delete=False,
-        encoding="utf-8",
-    )
-    try:
-        json.dump(data, tmp, indent=2)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp.close()
-        os.replace(tmp.name, str(manifest_path))
-    except Exception:
-        os.unlink(tmp.name)
-        raise
+# Re-exported from manifest.py (single source of truth for manifest I/O)
+from model_shelf.manifest import load_manifest as _load_manifest
+from model_shelf.manifest import save_manifest as _save_manifest
 
 
 # ---------------------------------------------------------------------------

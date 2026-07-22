@@ -208,6 +208,37 @@ def cmd_init(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_manifest(args: argparse.Namespace, cfg: Config) -> int:
+    """Show or rebuild the shelf manifest."""
+    from model_shelf.manifest import (
+        ManifestResult,
+        load_manifest,
+        rebuild_manifest,
+    )
+    if args.rebuild:
+        result = rebuild_manifest(cfg)
+        if args.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print(f"Rebuilt manifest: {result.models_count} models tracked")
+            for err in result.errors:
+                print(f"  warning: {err}", file=sys.stderr)
+        return 0 if result.status == "ok" else 1
+    else:
+        data = load_manifest(cfg.shelf_root)
+        if args.json:
+            print(json.dumps(data, indent=2))
+        else:
+            models = data.get("models", {})
+            print(f"Manifest: {len(models)} models tracked")
+            print(f"Updated:   {data.get('updated', 'never')}")
+            for repo_id in sorted(models):
+                entry = models[repo_id]
+                sha = entry.get("sha256", "")[:8]
+                print(f"  [{entry.get('format', '?')}] {repo_id}  sha256={sha}...")
+        return 0
+
+
 def cmd_find(args: argparse.Namespace, cfg: Config) -> int:
     results = find_models(args.query, format=args.format, limit=args.limit)
     if args.json:
@@ -318,6 +349,13 @@ def main(argv: list[str] | None = None) -> int:
     p_find.add_argument("--limit", type=int, default=10, help="max results (default 10)")
     p_find.add_argument("--json", action="store_true", help="emit JSON")
 
+    p_manifest = sub.add_parser("manifest", help="show or rebuild the shelf manifest")
+    p_manifest.add_argument(
+        "--rebuild", action="store_true",
+        help="re-scan the shelf and rebuild manifest.json",
+    )
+    p_manifest.add_argument("--json", action="store_true", help="emit JSON")
+
     p_import = sub.add_parser("import", help="import a local model into the shelf")
     p_import.add_argument("path", help="path to .gguf file or model directory")
     p_import.add_argument(
@@ -364,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_init(args, cfg)
         if args.command == "find":
             return cmd_find(args, cfg)
+        if args.command == "manifest":
+            return cmd_manifest(args, cfg)
     except StorageNotAvailableError as e:
         print(f"model-shelf: {e}", file=sys.stderr)
         return 2
