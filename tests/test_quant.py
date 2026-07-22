@@ -227,17 +227,16 @@ def test_detect_quant_unknown_format_returns_none():
 # ===========================================================================
 
 def test_gguf_header_real_model_nomic():
-    """Real GGUF model on filesystem: nomic-embed-text-v1.5.Q4_K_M.gguf.
+    """Real GGUF model downloaded from HuggingFace: nomic-embed-text-v1.5 Q2_K.
 
-    Non-destructive: read-only, no writes. Expected to exist on Jeff's machine.
-    Skips gracefully if the file is not present (CI compatibility).
+    Downloads a tiny 47 MB Q2_K GGUF on first run (cached by huggingface_hub).
+    Non-destructive: read-only, no writes. Fails hard if download is impossible
+    (fail-open crime: no t.Skip).
     """
-    from pathlib import Path as P
-    model = (P.home() / ".lmstudio" / ".internal" / "bundled-models"
-             / "nomic-ai" / "nomic-embed-text-v1.5-GGUF"
-             / "nomic-embed-text-v1.5.Q4_K_M.gguf")
-    if not model.is_file():
-        import pytest
-        pytest.skip("Real model not available on this machine")
+    from huggingface_hub import hf_hub_download
+    model = hf_hub_download(
+        "nomic-ai/nomic-embed-text-v1.5-GGUF",
+        filename="nomic-embed-text-v1.5.Q2_K.gguf",
+    )
     result = _quant_from_gguf_header(model)
-    assert result == "Q4_K_M", f"Expected Q4_K_M from GGUF header, got {result}"
+    assert result == "Q2_K", f"Expected Q2_K from GGUF header, got {result}"
