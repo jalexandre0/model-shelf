@@ -107,21 +107,34 @@ class ImportResult:
 # Format detection
 # ---------------------------------------------------------------------------
 
+def _is_gguf_file(path: Path) -> bool:
+    """Return True if *path* is a GGUF file, regardless of extension.
+
+    Checks magic bytes (b'GGUF'), not file extension. Works for Ollama blobs
+    and any other content-addressed storage that strips extensions.
+    """
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"GGUF"
+    except OSError:
+        return False
+
+
 def _detect_format_from_path(source: Path) -> str:
     """Detect model format from a local file or directory.
 
     Rules:
-        1. File ending in .gguf → "gguf"
+        1. File with GGUF magic bytes → "gguf"
         2. Directory with config.json + *.safetensors → "safetensors"
         3. Directory with config.json but no safetensors files → "mlx"
         4. Directory without config.json → ValueError
-        5. Non-.gguf file → ValueError
+        5. Non-GGUF file → ValueError
     """
     if source.is_file():
-        if source.suffix.lower() == ".gguf":
+        if _is_gguf_file(source):
             return "gguf"
         raise ValueError(
-            f"unsupported file type for import: {source.suffix}; "
+            f"unsupported file type for import: {source.suffix or '<no extension>'}; "
             "only .gguf files are supported for single-file import"
         )
 

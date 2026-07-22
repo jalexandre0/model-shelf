@@ -89,10 +89,16 @@ def detect_format_from_path(source: Path) -> str:
     # If the path actually exists on disk, use real stat.
     if source.exists():
         if source.is_file():
-            if source.suffix.lower() == ".gguf":
-                return "gguf"
+            # Check GGUF magic bytes, not extension.
+            # Ollama blobs and content-addressed files have no .gguf extension.
+            try:
+                with open(source, "rb") as f:
+                    if f.read(4) == b"GGUF":
+                        return "gguf"
+            except OSError:
+                pass
             raise ValueError(
-                f"unsupported file type for import: {source.suffix}; "
+                f"unsupported file type for import: {source.suffix or '<no extension>'}; "
                 "only .gguf files are supported for single-file import"
             )
         if source.is_dir():
