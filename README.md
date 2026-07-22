@@ -13,6 +13,28 @@ A local-first resolver for Hugging Face models — GGUF, MLX, and safetensors. Y
   path        /Volumes/MyDrive/ModelShelf/models/gguf/Qwen/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
 ```
 
+> **This is a fork** of [alexziskind1/model-shelf](https://github.com/alexziskind1/model-shelf) (MIT).
+> We build on Alex's original proposal — a local-first resolver that checks your shelf before downloading — and extend it toward a **full model lifecycle manager**: import scattered models, track them with content-addressable manifests, deduplicate by SHA256, and audit drift. The original `resolve`/`list`/`init`/`find` commands are untouched. Everything we add is opt-in and backward-compatible.
+
+## What this fork adds
+
+| Command | Status | What it does |
+|---------|--------|--------------|
+| `model-shelf import <path>` | ✅ Merged | Ingest a local model into the shelf: auto-detects format (GGUF/MLX/safetensors), infers org/repo from path, computes SHA256, hardlinks files, writes manifest. Default dry-run — pass `--execute` to actually import. |
+| `model-shelf manifest` | 📋 Planned | Generate/rebuild `manifest.json` with SHA256, params, source tracking. Foundation for audit/dedup. |
+| `model-shelf dedup` | 📋 Planned | Byte-level duplicate scan across shelf + Ollama blobs + HF cache. Hardlink dedup, report space savings. |
+| `model-shelf audit` | 📋 Planned | Cross-reference manifest vs filesystem. Find missing, untracked, and stale files. |
+| `model-shelf remove` | 📋 Planned | Delete a model + update manifest. Warns on hardlinks. Dry-run by default. |
+| `model-shelf gc` | 📋 Planned | Garbage-collect incomplete downloads, orphaned files, empty dirs. Dry-run by default. |
+
+**Key differences from upstream:**
+
+- **Manifest-backed**: every imported model gets a SHA256 entry in `manifest.json` at the shelf root. This is the source of truth for dedup, audit, and drift detection.
+- **Content addressing**: models are identified by SHA256 hash, not just filename. Same bytes = same model, regardless of where it came from.
+- **Safe by default**: all destructive commands (`import`, `remove`, `gc`) default to dry-run. Pass an explicit flag to actually execute.
+- **Hardlink-first**: `import` hardlinks files when source and shelf are on the same filesystem — zero bytes duplicated. Falls back to copy across filesystems.
+- **Quant auto-detection**: GGUF quantization tag is extracted from filename (`Q4_K_M`, `IQ3_XXS`, `F16`, etc.).
+
 ## Why
 
 Local AI workflows download the same model files over and over — across tools, runtimes, and machines. Model Shelf gives you one curated library at a path you own, and one shell command that asks: *do I already have this locally?*
@@ -212,7 +234,7 @@ shelf_root = "~/.cache/model-shelf/models"
 
 ## Status
 
-v0.13 — GGUF, MLX, and safetensors via CLI + Python lib. **Publisher/repo nested layout** that mirrors the Hugging Face Hub (and matches what LM Studio expects). Config is unpinned by default: `shelf_root` is optional, auto-discovered at runtime from any mounted `/Volumes/*/ModelShelf/models` (else internal). `model-shelf init <path>` pins; `model-shelf init` without an argument does not. Multi-shelf lookup: every `resolve` checks the primary plus every mounted drive with a ModelShelf folder plus the internal default. `model-shelf find <query>` searches Hugging Face for loose natural-language queries. Mount precheck refuses to write if the configured volume isn't mounted. Roadmap: `verify` subcommand, quantized-safetensors variants (AWQ/GPTQ).
+**Fork v0.14.0-dev** — upstream v0.13.1 + `import` command with manifest tracking. Publisher/repo nested layout that mirrors the Hugging Face Hub (and matches what LM Studio expects). Config is unpinned by default: `shelf_root` is optional, auto-discovered at runtime from any mounted `/Volumes/*/ModelShelf/models` (else internal). `model-shelf init <path>` pins; `model-shelf init` without an argument does not. Multi-shelf lookup: every `resolve` checks the primary plus every mounted drive with a ModelShelf folder plus the internal default. `model-shelf find <query>` searches Hugging Face for loose natural-language queries. Mount precheck refuses to write if the configured volume isn't mounted. `model-shelf import <path>` ingests local models into the shelf with format detection, SHA256 hashing, hardlink/copy, and manifest tracking. Roadmap: `manifest`, `dedup`, `audit`, `remove`, `gc`.
 
 ## License
 

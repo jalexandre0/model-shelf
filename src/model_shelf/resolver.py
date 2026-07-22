@@ -17,6 +17,8 @@ chasing, no temp folder to clean up.
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -124,8 +126,6 @@ def detect_format(repo_id: str) -> str:
         lmstudio-community/X-MLX-4bit   -> mlx
         Qwen/Qwen3-14B                  -> safetensors
     """
-    import re
-
     parts = repo_id.split("/")
     name = parts[-1].lower()
     tokens = set(filter(None, re.split(r"[-_./]", name)))
