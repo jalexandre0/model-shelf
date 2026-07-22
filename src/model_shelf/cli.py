@@ -434,6 +434,20 @@ def cmd_gc(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Run the standalone migration script — scan, dedup, import."""
+    import runpy
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent.parent.parent / "scripts" / "model-shelf-migrate"
+    sys.argv = [
+        str(script),
+        *(["--json"] if args.json else []),
+        *(["--execute"] if args.execute else []),
+    ]
+    runpy.run_path(str(script), run_name="__main__")
+    return 0
+
+
 def cmd_find(args: argparse.Namespace, cfg: Config) -> int:
     results = find_models(args.query, format=args.format, limit=args.limit)
     if args.json:
@@ -608,6 +622,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_gc.add_argument("--json", action="store_true", help="emit JSON")
 
+    p_migrate = sub.add_parser(
+        "migrate", help="scan, dedup, and import models from scattered locations"
+    )
+    p_migrate.add_argument(
+        "--execute", action="store_true",
+        help="actually import (default dry-run)",
+    )
+    p_migrate.add_argument("--json", action="store_true", help="emit JSON")
+
     p_init = sub.add_parser(
         "init",
         help="create the shelf directory (optionally at a new path)",
@@ -642,6 +665,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_remove(args, cfg)
         if args.command == "gc":
             return cmd_gc(args, cfg)
+        if args.command == "migrate":
+            return cmd_migrate(args)
     except StorageNotAvailableError as e:
         print(f"model-shelf: {e}", file=sys.stderr)
         return 2
