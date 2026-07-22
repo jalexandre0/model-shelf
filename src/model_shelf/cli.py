@@ -448,6 +448,20 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update() -> int:
+    """Reinstall model-shelf from the latest GitHub release."""
+    import subprocess as _sp
+    print("model-shelf: updating from github.com/jalexandre0/model-shelf ...")
+    result = _sp.run(
+        [
+            "uv", "tool", "install", "--force",
+            "git+https://github.com/jalexandre0/model-shelf",
+        ],
+        capture_output=False,
+    )
+    return result.returncode
+
+
 def cmd_find(args: argparse.Namespace, cfg: Config) -> int:
     results = find_models(args.query, format=args.format, limit=args.limit)
     if args.json:
@@ -655,6 +669,11 @@ def main(argv: list[str] | None = None) -> int:
         "init",
         help="create the shelf directory (optionally at a new path)",
     )
+
+    p_update = sub.add_parser(
+        "update", help="update model-shelf to the latest version"
+    )
+
     p_init.add_argument(
         "path",
         nargs="?",
@@ -687,6 +706,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_gc(args, cfg)
         if args.command == "migrate":
             return cmd_migrate(args)
+        if args.command == "update":
+            return cmd_update()
     except StorageNotAvailableError as e:
         print(f"model-shelf: {e}", file=sys.stderr)
         return 2
