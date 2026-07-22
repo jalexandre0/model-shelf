@@ -1,4 +1,5 @@
 from model_shelf.config import load_config
+from model_shelf.dedup import DedupGroup, DedupResult, execute_dedup, find_duplicates
 from model_shelf.import_model import ImportResult, import_model
 from model_shelf.manifest import (
     ManifestResult,
@@ -25,6 +26,10 @@ from model_shelf.search import FindResult, find_models
 
 __all__ = [
     "Config",
+    "DedupGroup",
+    "DedupResult",
+    "execute_dedup",
+    "find_duplicates",
     "FindResult",
     "ImportResult",
     "ManifestResult",

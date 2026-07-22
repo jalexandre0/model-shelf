@@ -21,6 +21,7 @@ from model_shelf.resolver import (
     resolve_model,
 )
 from model_shelf.import_model import ImportResult, import_model
+from model_shelf.dedup import DedupGroup, DedupResult, execute_dedup, find_duplicates
 from model_shelf.search import find_models
 
 
@@ -239,6 +240,53 @@ def cmd_manifest(args: argparse.Namespace, cfg: Config) -> int:
         return 0
 
 
+def cmd_dedup(args: argparse.Namespace, cfg: Config) -> int:
+    """Find and deduplicate identical model files."""
+    result = find_duplicates(
+        cfg,
+        include_ollama=args.include_ollama,
+        include_hf_cache=args.include_hf_cache,
+    )
+    if not args.execute:
+        # Dry-run (default)
+        if args.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            _print_dedup_report(result)
+        return 0
+
+    dedup_result = execute_dedup(cfg, result)
+    if args.json:
+        print(json.dumps(dedup_result.to_dict(), indent=2))
+    else:
+        _print_dedup_report(dedup_result)
+    return 0
+
+
+def _print_dedup_report(result: DedupResult) -> None:
+    if not result.groups:
+        print("No duplicates found.")
+        return
+    print(f"Found {len(result.groups)} duplicate group(s)")
+    total_savings = result.potential_savings_bytes
+    if total_savings >= 1e9:
+        print(f"  Potential savings: {total_savings / 1e9:.2f} GB")
+    else:
+        print(f"  Potential savings: {total_savings / 1e6:.1f} MB")
+    if getattr(result, 'hardlinks_created', 0):
+        print(f"  Hardlinks created: {result.hardlinks_created}")
+    if getattr(result, 'skipped_cross_fs', 0):
+        print(f"  Skipped (cross-fs):  {result.skipped_cross_fs}")
+    if getattr(result, 'skipped_external_only', 0):
+        print(f"  Skipped (external-only): {result.skipped_external_only}")
+    for g in result.groups:
+        print(f"\n  SHA256: {g.sha256[:16]}...  copies: {len(g.files)}  "
+              f"waste: {g.duplicate_bytes / 1e6:.1f} MB")
+        for i, f in enumerate(g.files):
+            mark = " ← KEEP" if i == 0 else ""
+            print(f"    {f}{mark}")
+
+
 def cmd_find(args: argparse.Namespace, cfg: Config) -> int:
     results = find_models(args.query, format=args.format, limit=args.limit)
     if args.json:
@@ -356,6 +404,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_manifest.add_argument("--json", action="store_true", help="emit JSON")
 
+    p_dedup = sub.add_parser("dedup", help="find and deduplicate identical model files")
+    p_dedup.add_argument(
+        "--include-ollama", action="store_true",
+        help="cross-reference Ollama blobs (~/.ollama/models/blobs/)",
+    )
+    p_dedup.add_argument(
+        "--include-hf-cache", action="store_true",
+        help="cross-reference HuggingFace cache blobs",
+    )
+    p_dedup.add_argument(
+        "--execute", action="store_true",
+        help="actually create hardlinks (default is dry-run)",
+    )
+    p_dedup.add_argument("--json", action="store_true", help="emit JSON")
+
     p_import = sub.add_parser("import", help="import a local model into the shelf")
     p_import.add_argument("path", help="path to .gguf file or model directory")
     p_import.add_argument(
@@ -404,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_find(args, cfg)
         if args.command == "manifest":
             return cmd_manifest(args, cfg)
+        if args.command == "dedup":
+            return cmd_dedup(args, cfg)
     except StorageNotAvailableError as e:
         print(f"model-shelf: {e}", file=sys.stderr)
         return 2
