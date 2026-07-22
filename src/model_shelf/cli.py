@@ -626,8 +626,12 @@ def main(argv: list[str] | None = None) -> int:
         "migrate", help="scan, dedup, and import models from scattered locations"
     )
     p_migrate.add_argument(
+        "--dry-run", action="store_true", default=True,
+        help="scan and report without importing (default)",
+    )
+    p_migrate.add_argument(
         "--execute", action="store_true",
-        help="actually import (default dry-run)",
+        help="actually import models into the shelf",
     )
     p_migrate.add_argument("--json", action="store_true", help="emit JSON")
 
