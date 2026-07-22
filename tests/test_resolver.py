@@ -138,6 +138,31 @@ def test_mlx_empty_dir_does_not_count(tmp_path: Path):
     assert result.status == "missing"
 
 
+def test_looks_like_model_dir_rejects_incomplete_download(tmp_path: Path):
+    """Regression: dir with config.json but no weight files is NOT a valid model.
+
+    Incomplete downloads have metadata files (config.json, .gitattributes) but no
+    actual model weights. They should not appear in list or count as shelf hits.
+    """
+    from model_shelf.resolver import _looks_like_model_dir
+    d = tmp_path / "incomplete-model"
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / ".gitattributes").write_text("* text=auto")
+    (d / ".cache").mkdir()
+    assert _looks_like_model_dir(d) is False
+
+
+def test_looks_like_model_dir_accepts_complete_model(tmp_path: Path):
+    """Regression: dir with config.json AND weight files IS a valid model."""
+    from model_shelf.resolver import _looks_like_model_dir
+    d = tmp_path / "complete-model"
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / "model.safetensors").write_bytes(b"weights")
+    assert _looks_like_model_dir(d) is True
+
+
 # --- resolver: safetensors path --------------------------------------------
 
 def test_safetensors_shelf_hit(tmp_path: Path):

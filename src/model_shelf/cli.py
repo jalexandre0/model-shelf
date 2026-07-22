@@ -16,6 +16,7 @@ from model_shelf.resolver import (
     SUPPORTED_FORMATS,
     Config,
     StorageNotAvailableError,
+    _looks_like_model_dir,
     check_storage_available,
     detect_format,
     init_shelf,
@@ -508,7 +509,10 @@ def _print_shelf_contents(root: Path) -> None:
                             f"({_fmt_size(f.stat().st_size)})"
                         )
                 else:
-                    print(f"    {publisher.name}/{repo.name}/")
+                    # MLX/safetensors — only show if directory has real model content.
+                    # Skip empty shells from incomplete downloads (just .gitattributes, .cache/).
+                    if _looks_like_model_dir(repo):
+                        print(f"    {publisher.name}/{repo.name}/")
 
 
 def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
