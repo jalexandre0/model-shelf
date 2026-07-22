@@ -575,8 +575,12 @@ def main(argv: list[str] | None = None) -> int:
         help="cross-reference HuggingFace cache blobs",
     )
     p_dedup.add_argument(
+        "--dry-run", action="store_true", default=True,
+        help="scan and report without hardlinking (default)",
+    )
+    p_dedup.add_argument(
         "--execute", action="store_true",
-        help="actually create hardlinks (default is dry-run)",
+        help="actually create hardlinks",
     )
     p_dedup.add_argument("--json", action="store_true", help="emit JSON")
 
@@ -597,8 +601,12 @@ def main(argv: list[str] | None = None) -> int:
         help="always copy, never hardlink (even on same filesystem)",
     )
     p_import.add_argument(
+        "--dry-run", action="store_true", default=True,
+        help="compute and report without writing (default)",
+    )
+    p_import.add_argument(
         "--execute", action="store_true",
-        help="actually perform the import (default is dry-run)",
+        help="actually perform the import",
     )
     p_import.add_argument("--json", action="store_true", help="emit JSON")
 
@@ -608,8 +616,12 @@ def main(argv: list[str] | None = None) -> int:
     p_remove = sub.add_parser("remove", help="remove a model from the shelf")
     p_remove.add_argument("repo_id", help='e.g. "Qwen/Qwen3-14B-GGUF"')
     p_remove.add_argument(
+        "--dry-run", action="store_true", default=True,
+        help="show what would be removed without deleting (default)",
+    )
+    p_remove.add_argument(
         "--execute", action="store_true",
-        help="actually delete (default dry-run)",
+        help="actually delete the model",
     )
     p_remove.add_argument("--json", action="store_true", help="emit JSON")
 
@@ -617,8 +629,12 @@ def main(argv: list[str] | None = None) -> int:
         "gc", help="find and clean up incomplete downloads, orphans, empty dirs"
     )
     p_gc.add_argument(
+        "--dry-run", action="store_true", default=True,
+        help="scan and report without deleting (default)",
+    )
+    p_gc.add_argument(
         "--execute", action="store_true",
-        help="actually delete (default dry-run)",
+        help="actually delete incomplete/orphaned files",
     )
     p_gc.add_argument("--json", action="store_true", help="emit JSON")
 
