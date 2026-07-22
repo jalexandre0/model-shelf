@@ -1,5 +1,7 @@
+from model_shelf.audit import AuditResult, run_audit
 from model_shelf.config import load_config
 from model_shelf.dedup import DedupGroup, DedupResult, execute_dedup, find_duplicates
+from model_shelf.gc import GCResult, run_gc
 from model_shelf.import_model import ImportResult, import_model
 from model_shelf.manifest import (
     ManifestResult,
@@ -10,6 +12,7 @@ from model_shelf.manifest import (
     remove_manifest_entry,
     save_manifest,
 )
+from model_shelf.remove import RemoveResult, remove_model
 from model_shelf.resolver import (
     Config,
     ResolveResult,
@@ -25,14 +28,17 @@ from model_shelf.resolver import (
 from model_shelf.search import FindResult, find_models
 
 __all__ = [
+    "AuditResult",
     "Config",
     "DedupGroup",
     "DedupResult",
+    "GCResult",
     "execute_dedup",
     "find_duplicates",
     "FindResult",
     "ImportResult",
     "ManifestResult",
+    "RemoveResult",
     "ResolveResult",
     "ShelfNotInitializedError",
     "StorageNotAvailableError",
@@ -49,7 +55,10 @@ __all__ = [
     "load_manifest",
     "rebuild_manifest",
     "remove_manifest_entry",
+    "remove_model",
     "resolve_model",
+    "run_audit",
+    "run_gc",
     "save_manifest",
 ]
 __version__ = "0.13.1"

@@ -246,6 +246,50 @@ def remove_manifest_entry(shelf_root: Path, repo_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers (used by audit, remove, gc)
+# ---------------------------------------------------------------------------
+
+def build_tracked_path_set(shelf_root: Path, models: dict) -> set[str]:
+    """Build a set of absolute str paths for every file listed in the manifest.
+
+    This is the canonical implementation shared by audit.py and gc.py.
+    """
+    from model_shelf.resolver import SUPPORTED_FORMATS  # noqa: PLC0415
+
+    tracked: set[str] = set()
+    for entry in models.values():
+        fmt = entry.get("format", "")
+        if fmt not in SUPPORTED_FORMATS:
+            continue
+        repo_id = entry.get("repo_id", "")
+        if "/" not in repo_id:
+            continue
+        publisher, _, repo_name = repo_id.partition("/")
+        model_dir = shelf_root / fmt / publisher / repo_name
+        for fname in entry.get("files", []):
+            tracked.add(str(model_dir / fname))
+    return tracked
+
+
+def should_skip_shelf_path(path: Path) -> bool:
+    """Return True if *path* should be excluded from shelf scans.
+
+    Rules (conservative, shared by audit and GC):
+      - macOS resource forks:  ._ prefix on filename
+      - .cache/ anywhere in path (HF resumability metadata)
+      - Dot-prefixed directories anywhere in path (hidden dirs)
+    """
+    if path.name.startswith("._"):
+        return True
+    for part in path.parts:
+        if part.startswith(".cache"):
+            return True
+        if part.startswith(".") and part != "." and part != "..":
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Rebuild
 # ---------------------------------------------------------------------------
 
