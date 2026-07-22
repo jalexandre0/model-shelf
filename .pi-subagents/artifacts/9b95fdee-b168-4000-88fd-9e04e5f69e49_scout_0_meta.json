@@ -1,0 +1,106 @@
+{
+  "runId": "9b95fdee-b168-4000-88fd-9e04e5f69e49",
+  "agent": "scout",
+  "task": "Build handoff for Phase 5: audit, remove, gc commands.\n\n**NAVIGATION: Use Serena tools only.**\n\n**Read these files:**\n- src/model_shelf/manifest.py (load_manifest — audit/remove need it)\n- src/model_shelf/import_model.py (_sha256_file — audit needs SHA256)\n- src/model_shelf/cli.py (cmd_* pattern, subparser registration)\n- .serena/memories/implementation_plan.md (Phase 5: audit, remove, gc section)\n- .serena/memories/test_specs.md (Phase 5a/5b/5c — 23 tests total)\n- .serena/memories/conventions.md\n\n**Write to handoff/audit-remove-gc.md:**\n\nThree modules, one phase:\n\n### AUDIT (src/model_shelf/audit.py)\n- AuditResult dataclass (missing, untracked, stale lists)\n- run_audit(config) -> AuditResult\n- Cross-references manifest entries vs filesystem\n- Exit 0 clean, 1 if issues\n\n### REMOVE (src/model_shelf/remove.py)\n- RemoveResult dataclass (removed, hardlinks_warn)\n- remove_model(config, repo_id, dry_run=True) -> RemoveResult\n- st_nlink check before delete, warn on hardlinks\n- Clean up empty parent dirs\n\n### GC (src/model_shelf/gc.py)\n- GCResult dataclass (incomplete_downloads, orphaned_files, empty_dirs, total_reclaimable_bytes)\n- run_gc(config) -> GCResult\n- Find: dirs without config.json/.gguf, empty dirs, orphaned .gguf files\n- Skip .cache/, dot-prefixed dirs\n- Dry-run default\n\n### CLI integration (cli.py)\n- Three subcommands: audit, remove, gc\n- cmd_audit, cmd_remove, cmd_gc following cmd_* pattern\n- --json on all, --dry-run/--execute on destructive ones\n\n### __init__.py exports\n- All 3 result dataclasses + 3 main functions\n\n**DO NOT MODIFY:** manifest.py, import_model.py, dedup.py, resolver.py, config.py, detect.py, relocate.py, search.py, existing tests\n\n---\n**Output:**\nWrite your findings to exactly this path: /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/9b95fdee-b168-4000-88fd-9e04e5f69e49/handoff/audit-remove-gc.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "deepseek/deepseek-v4-pro:low",
+  "attemptedModels": [
+    "deepseek/deepseek-v4-pro:low"
+  ],
+  "modelAttempts": [
+    {
+      "model": "deepseek/deepseek-v4-pro:low",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 36871,
+        "output": 9355,
+        "cacheRead": 152064,
+        "cacheWrite": 0,
+        "cost": 0.024728967,
+        "turns": 6
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Returned concrete findings for all 10 files read: manifest.py (full), import_model.py (full, _sha256_file at lines 149-156), cli.py (full, cmd_* pattern at lines 150-340), dedup.py (full, execute/dry-run pattern), resolver.py (Config, check_storage_available, SUPPORTED_FORMATS), __init__.py (current exports), implementation_plan.md (Phase 5), test_specs.md (23 tests), conventions.md, existing test patterns (test_dedup.py, test_import.py). Documented specific risks: SHA256 mismatch between _sha256_file and _sha256_dir_for_rebuild for MLX/safetensors dirs, manifest files-list accuracy, incomplete download false-positives."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "read all 10 required files + 4 additional context files (dedup.py, __init__.py, config.py, resolver.py, test_dedup.py, test_import.py)",
+          "result": "passed",
+          "summary": "All files read successfully; comprehensive handoff written to output path (26KB)"
+        }
+      ],
+      "validationOutput": [
+        "Handoff written to /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/9b95fdee-b168-4000-88fd-9e04e5f69e49/handoff/audit-remove-gc.md",
+        "Covers all three modules with dataclass shapes, algorithm pseudocode, CLI integration, __init__.py exports, and test specs",
+        "All off-limits modules correctly identified as import-only"
+      ],
+      "residualRisks": [
+        "SHA256 for MLX/safetensors directories: audit must use _sha256_dir_for_rebuild (from manifest.py) or replicate its .cache/ and ._ exclusion logic — using _sha256_file or _sha256_directory from import_model would produce different hashes and false 'stale' results",
+        "GC incomplete-download detection: dirs without config.json/.gguf are flagged — could include non-model dirs if any exist under shelf_root/{fmt}/",
+        "Manifest 'files' list may not include every file if manifest was hand-edited or from older versions — audit untracked list may contain files that are legitimate model files"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "No code changes made — this is a scouting handoff only",
+      "reviewFindings": [
+        "no blockers — all dependencies identified, patterns confirmed, risks documented"
+      ],
+      "manualNotes": "The _sha256_dir_for_rebuild function in manifest.py (lines ~120-131) is the correct SHA256 function for MLX/safetensors directory comparison in audit. It is currently module-private (prefixed with underscore). Either import it with # noqa PLC2701 (same pattern as dedup.py imports _sha256_file from import_model) or replicate its .cache/ and ._ exclusion logic in audit.py."
+    }
+  },
+  "transcriptPath": "/Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/9b95fdee-b168-4000-88fd-9e04e5f69e49_scout_0_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784733684921
+}

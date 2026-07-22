@@ -1,0 +1,117 @@
+{
+  "runId": "fa1abc9d-08f5-462c-8e7b-c4f458051d28",
+  "agent": "reviewer",
+  "task": "[Read from: /Users/jeffersonsantos/Projects/model-shelf/plan.md, /Users/jeffersonsantos/Projects/model-shelf/progress.md]\n\nReview dedup command for CORRECTNESS and SAFETY.\n\n**Use Serena tools only.**\nWorker result: Output saved to: /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/fa1abc9d-08f5-462c-8e7b-c4f458051d28/worker/dedup-result.md (3.4 KB, 54 lines). Read this file if needed.\n\n1. Does find_duplicates() correctly walk shelf + optional locations?\n2. Does SHA256 hashing use the same algorithm as import_model.py?\n3. Does execute_dedup() check st_dev before os.link()?\n4. Are Ollama blobs and HF cache blobs NEVER unlinked?\n5. Is shelf copy always the KEEP (canonical)?\n6. Does dry-run default prevent any writes?\n7. Does --execute actually create hardlinks and remove duplicates?\n8. Is manifest[\"models\"][repo_id][\"hardlinks\"] updated correctly?\n9. Run pytest tests/ -v — verify zero regressions (expect 137+).\n\nOutput: severity, file:line, fix. Do NOT modify files.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "deepseek/deepseek-v4-pro:high",
+  "attemptedModels": [
+    "deepseek/deepseek-v4-pro:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "deepseek/deepseek-v4-pro:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 33434,
+        "output": 10808,
+        "cacheRead": 283136,
+        "cacheWrite": 0,
+        "cost": 0.024973118000000002,
+        "turns": 15
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Returned concrete findings with file paths, line numbers, and severity for each of the 9 review questions. Identified 1 blocker (HF cache scan dead code), 3 notes, and 1 observation."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "pytest tests/ -v",
+          "result": "passed",
+          "summary": "138 passed, 0 failed in 0.47s — zero regressions"
+        }
+      ],
+      "validationOutput": [
+        "find_duplicates shelf walk: correct — iterates SUPPORTED_FORMATS, rglob, filters ._ and .cache",
+        "find_duplicates Ollama scan: correct — iterdir (flat), filters . prefix",
+        "find_duplicates HF cache scan: BLOCKER — .cache in f.parts skips all HF blobs unconditionally",
+        "SHA256 hashing: identical — dedup.py imports _sha256_file from import_model.py",
+        "st_dev check: correct — _is_same_fs() compared before os.link(); same-inode guard present",
+        "External blob unlinking: safe — content preserved via hardlink; atomic tmp+replace",
+        "Shelf canonical: correct — _is_in_shelf() selects first shelf file; external-only skipped",
+        "Dry-run: correct — --execute defaults False; find_duplicates is read-only",
+        "--execute: correct — hardlinks created, st_ino/st_nlink verified by tests",
+        "Manifest hardlinks: correct — _update_manifest_for_dedup updates canonical entry atomically"
+      ],
+      "residualRisks": [
+        "HF cache scan is non-functional due to .cache in f.parts bug (blocker)",
+        "test_dedup_include_hf_cache_blobs is too weak — doesn't assert detection of actual HF cache files",
+        "Non-canonical shelf entries' hardlinks fields are not updated after dedup (cosmetic, rebuild corrects it)",
+        "Ollama/HF blob replacement loses extended attributes/ACLs (content safe, metadata lost)",
+        "Private import of _sha256_file — rename in import_model.py would silently break dedup at import time"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Review-only; no files modified. Reviewed dedup.py (271 lines), test_dedup.py (344 lines, 19 tests), cli.py dedup integration, and related modules.",
+      "reviewFindings": [
+        "blocker: src/model_shelf/dedup.py:234 — .cache in f.parts filter unconditionally skips all HF cache blob files, making include_hf_cache non-functional",
+        "note: tests/test_dedup.py:189-210 — test_dedup_include_hf_cache_blobs is too weak to catch the HF scan bug; should create files in actual ~/.cache/huggingface/hub/ path",
+        "note: src/model_shelf/dedup.py:160-183 — _update_manifest_for_dedup only updates canonical's hardlinks; non-canonical shelf entries in same group retain stale data"
+      ],
+      "manualNotes": "Fix for the blocker: in the HF cache scan loop (line 234), remove or rewrite the .cache filter. The simplest fix is to delete the .cache check entirely from the HF branch, since the entire HF cache tree lives under .cache/ and contains no nested .cache subdirectories that need exclusion. A more targeted fix: check if '.cache' appears in the path relative to hf_cache, not the absolute path."
+    }
+  },
+  "transcriptPath": "/Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/fa1abc9d-08f5-462c-8e7b-c4f458051d28_reviewer_2_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784733140248
+}

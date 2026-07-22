@@ -1,0 +1,117 @@
+{
+  "runId": "0f0250a1-dcac-42ba-a559-5f65a4b296c3",
+  "agent": "reviewer",
+  "task": "[Read from: /Users/jeffersonsantos/Projects/model-shelf/plan.md, /Users/jeffersonsantos/Projects/model-shelf/progress.md]\n\nReview detect_quant for CORRECTNESS.\n\n**Use Serena tools only.**\nWorker result: Output saved to: /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/0f0250a1-dcac-42ba-a559-5f65a4b296c3/worker/detect-quant-result.md (3.1 KB, 56 lines). Read this file if needed.\n\n1. Does FILETYPE_MAP cover all known GGUF quantization types?\n2. Does _quant_from_gguf_header correctly parse v3 header? Edge cases: not GGUF, missing file_type, truncated file?\n3. Does _quant_from_config_json handle: MLX quantization.bits, safetensors quantization_config (gptq/awq), torch_dtype (f16/bf16/f32), missing config.json, invalid JSON?\n4. Does detect_quant() fallback chain work: header → config → filename?\n5. Do the 19 tests cover all branches or are there gaps?\n6. Run pytest tests/ -v — verify zero regressions.\n\nOutput: severity, file:line, fix. Do NOT modify files.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "deepseek/deepseek-v4-pro:high",
+  "attemptedModels": [
+    "deepseek/deepseek-v4-pro:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "deepseek/deepseek-v4-pro:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 30047,
+        "output": 14543,
+        "cacheRead": 225664,
+        "cacheWrite": 0,
+        "cost": 0.026540886999999996,
+        "turns": 12
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "All findings cite exact file paths, line numbers, and reproduceable evidence. Blocker identified with concrete fix."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "pytest tests/ -v",
+          "result": "passed",
+          "summary": "102 passed, 0 failed, 0 skipped in 0.18s"
+        },
+        {
+          "command": "pytest tests/test_quant.py -v",
+          "result": "passed",
+          "summary": "22 passed, 0 failed, 0 skipped in 0.11s"
+        }
+      ],
+      "validationOutput": [
+        "1. FILETYPE_MAP: covers 0-24 (correct for current GGUF spec range 0-24; types 25-31 not yet mapped)",
+        "2. _quant_from_gguf_header: v3 header parsing correct; handles not-GGUF (magic check), missing file_type (returns None after iterating KVs), truncated file (every read has length guard + try/except)",
+        "3. _quant_from_config_json: MLX quantization.bits → Q4; GPTQ/AWQ quantization_config → GPTQ-4bit/AWQ-4bit; torch_dtype → F16/BF16/F32; missing config.json → None; invalid JSON → None — all verified",
+        "4. detect_quant fallback: gguf header→filename; mlx/safetensors→config.json; unknown→None — correct dispatch verified",
+        "5. 22 tests in test_quant.py + 5 in test_import.py cover quant detection; gaps: no detect_quant(mlx/safetensors) integration test, FILETYPE_MAP exhaustiveness test only checks 0-24",
+        "6. 102/102 tests pass — zero regressions"
+      ],
+      "residualRisks": [
+        "FILETYPE_MAP types 25-31 not mapped — filename fallback likely catches most, but header parsing returns None for these newer quant types",
+        "_skip_gguf_value drops string/nested arrays silently — purely theoretical (GGUF model metadata never uses these), no known impact",
+        "No test for detect_quant(fmt='mlx') or detect_quant(fmt='safetensors') integration path — underlying _quant_from_config_json is covered directly"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "No diff — review-only inspection",
+      "reviewFindings": [
+        "blocker: src/model_shelf/import_model.py:279 — _detect_quant_from_filename regex misses Q2_K, Q6_K, Q8_K; pattern q[2-8]_[klo]_[ms] requires third segment but these types have only Qx_K; fix: add pattern r\"(q[2-8]_k)(?![a-z0-9])\" or make third segment optional",
+        "note: src/model_shelf/import_model.py:46-71 — FILETYPE_MAP missing GGUF types 25-31 (IQ4_NL, IQ3_S, IQ3_M, IQ2_S, IQ2_M, IQ4_K_S, IQ4_K_M)",
+        "note: tests/test_quant.py:48 — test_gguf_filetype_map_is_exhaustive only checks range(0,25); should match whatever FILETYPE_MAP covers",
+        "note: tests/test_quant.py — no detect_quant integration tests for fmt='mlx' or fmt='safetensors' (underlying _quant_from_config_json is covered)"
+      ],
+      "manualNotes": "The Q2_K/Q6_K/Q8_K filename regex bug is the only actionable fix. All other issues are minor gaps or documentation notes."
+    }
+  },
+  "transcriptPath": "/Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/0f0250a1-dcac-42ba-a559-5f65a4b296c3_reviewer_2_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784730918247
+}

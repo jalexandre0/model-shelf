@@ -299,9 +299,53 @@ def resolve_model(
     if fmt == "gguf" and quant is None:
         raise ValueError("--quant is required for gguf format")
 
+    # Check manifest first — it's the source of truth.
+    # Avoids filesystem walk for models we already know about.
+    manifest_hit = _check_manifest(config, repo_id, fmt, quant)
+    if manifest_hit is not None:
+        return manifest_hit
+
     if fmt == "gguf":
         return _resolve_gguf(config, repo_id, quant)
     return _resolve_snapshot(config, repo_id, fmt)
+
+
+def _check_manifest(
+    config: Config, repo_id: str, fmt: str, quant: str | None
+) -> ResolveResult | None:
+    """Check manifest.json for a tracked model. Returns ResolveResult on hit, None on miss."""
+    try:
+        from model_shelf.manifest import load_manifest
+        manifest = load_manifest(config.shelf_root)
+        models = manifest.get("models", {})
+    except Exception:
+        return None
+    if repo_id not in models:
+        return None
+    entry = models[repo_id]
+    if entry.get("format") != fmt:
+        return None
+    # Use the actual files list from the manifest entry, not computed paths.
+    # HF filenames can differ in casing/punctuation from what hf_filename() guesses.
+    files = entry.get("files", [])
+    if not files:
+        return None
+    publisher, repo = repo_id.split("/", 1)
+    if fmt == "gguf":
+        candidate = config.shelf_root / "gguf" / publisher / repo / files[0]
+        if candidate.is_file() and _is_valid_gguf(candidate):
+            return ResolveResult(
+                status="found", source="local_shelf", format=fmt,
+                path=candidate, checks=[{"location": "manifest", "root": str(config.shelf_root), "result": "hit"}],
+            )
+    else:
+        candidate = config.shelf_root / fmt / publisher / repo
+        if _looks_like_model_dir(candidate):
+            return ResolveResult(
+                status="found", source="local_shelf", format=fmt,
+                path=candidate, checks=[{"location": "manifest", "root": str(config.shelf_root), "result": "hit"}],
+            )
+    return None
 
 
 def _is_valid_gguf(path: Path) -> bool:

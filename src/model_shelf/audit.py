@@ -94,20 +94,26 @@ def _check_manifest_entries(
 def _find_untracked_files(
     shelf_root: Path, tracked_paths: set[str]
 ) -> list[str]:
-    """Walk shelf and find files not in *tracked_paths*."""
+    """Walk shelf and find files AND directories not in *tracked_paths*."""
     untracked: list[str] = []
     for fmt in SUPPORTED_FORMATS:
         fmt_dir = shelf_root / fmt
         if not fmt_dir.is_dir():
             continue
         for f in fmt_dir.rglob("*"):
-            if not f.is_file():
-                continue
             if should_skip_shelf_path(f):
                 continue
             f_str = str(f)
-            if f_str not in tracked_paths:
-                untracked.append(f_str)
+            if f.is_file():
+                if f_str not in tracked_paths:
+                    untracked.append(f_str)
+            elif f.is_dir():
+                # Only flag MLX/safetensors directories that look like model dirs.
+                # GGUF models are single files — their parent dirs are just containers.
+                if f_str not in tracked_paths:
+                    has_config = (f / "config.json").is_file()
+                    if has_config:
+                        untracked.append(f_str)
     return untracked
 
 

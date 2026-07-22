@@ -70,7 +70,7 @@ def test_rebuild_with_gguf_model(tmp_path: Path):
     assert result.models_count == 1
 
     manifest = load_manifest(cfg.shelf_root)
-    entry = manifest["models"]["Qwen/model-Q4_K_M"]
+    entry = manifest["models"]["Qwen/Qwen3-14B-GGUF"]
     assert entry["format"] == "gguf"
     assert entry["quant"] == "Q4_K_M"
     assert entry["files"] == ["model-Q4_K_M.gguf"]
@@ -145,7 +145,7 @@ def test_rebuild_skips_hidden_files(tmp_path: Path):
     result = rebuild_manifest(cfg)
 
     assert result.status == "ok"
-    entry = load_manifest(cfg.shelf_root)["models"]["test/model-F16"]
+    entry = load_manifest(cfg.shelf_root)["models"]["test/model-repo"]
     assert entry["files"] == ["model-F16.gguf"]
     # SHA256 should not be affected by hidden files — just check it's valid
     assert len(entry["sha256"]) == 64
@@ -190,7 +190,7 @@ def test_rebuild_detects_params_from_gguf_header(tmp_path: Path):
     result = rebuild_manifest(cfg)
 
     assert result.status == "ok"
-    entry = load_manifest(cfg.shelf_root)["models"]["test/model-Q4_0"]
+    entry = load_manifest(cfg.shelf_root)["models"]["test/model-repo"]
     assert "params" in entry
     assert entry["params"]["architecture"] == "llama"
 
@@ -333,8 +333,8 @@ def test_rebuild_preserves_existing_manifest_fields(tmp_path: Path):
         "version": 1,
         "updated": "old",
         "models": {
-            "test/model-F16": {
-                "repo_id": "test/model-F16",
+            "test/model-repo": {
+                "repo_id": "test/model-repo",
                 "format": "gguf",
                 "sha256": "oldsha",
                 "files": ["model-F16.gguf"],
@@ -348,7 +348,7 @@ def test_rebuild_preserves_existing_manifest_fields(tmp_path: Path):
     result = rebuild_manifest(cfg)
 
     assert result.status == "ok"
-    entry = load_manifest(cfg.shelf_root)["models"]["test/model-F16"]
+    entry = load_manifest(cfg.shelf_root)["models"]["test/model-repo"]
     assert entry["source"] == "migrated"  # preserved
     assert entry["hardlinks"] == ["/some/path"]  # preserved
     # SHA256 should be updated from disk

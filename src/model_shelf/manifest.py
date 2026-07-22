@@ -75,6 +75,12 @@ def _read_gguf_string(f) -> str:
     if len(raw) < 8:
         return ""
     strlen = struct.unpack("<Q", raw)[0]
+    # Safety: refuse to allocate more than 100 MB for a single string.
+    # Corrupt strlen values (from parser misalignment) can be gigabytes.
+    if strlen > 100_000_000:
+        raise ValueError(
+            f"GGUF string length {strlen} is unreasonably large at offset {f.tell() - 8}"
+        )
     return f.read(strlen).decode("utf-8", errors="replace")
 
 
@@ -85,7 +91,19 @@ def _skip_gguf_value(f, type_id: int) -> None:
         if len(raw) >= 8:
             f.read(struct.unpack("<Q", raw)[0])
     elif type_id == 9:  # array
-        f.read(12)  # elem_type (4) + count (8)
+        elem_type_raw = f.read(4)
+        count_raw = f.read(8)
+        if len(elem_type_raw) >= 4 and len(count_raw) >= 8:
+            elem_type = struct.unpack("<I", elem_type_raw)[0]
+            count = struct.unpack("<Q", count_raw)[0]
+            if elem_type == 8:  # array of strings — variable length
+                for _ in range(count):
+                    sraw = f.read(8)
+                    if len(sraw) >= 8:
+                        f.read(struct.unpack("<Q", sraw)[0])
+            else:
+                esize = _GGUF_ELEM_SIZES.get(elem_type, 4)
+                f.read(count * esize)
     else:
         size = _GGUF_ELEM_SIZES.get(type_id, 0)
         if size > 0:
@@ -127,7 +145,7 @@ def _read_gguf_params(path: Path) -> dict | None:
                 else:
                     _skip_gguf_value(f, type_id)
             return params if params else None
-    except (OSError, struct.error, UnicodeDecodeError):
+    except (OSError, struct.error, UnicodeDecodeError, ValueError, MemoryError):
         return None
 
 
@@ -352,8 +370,7 @@ def _discover_gguf_models(
         if not f.name.startswith("._")
     )
     for gguf_path in gguf_files:
-        stem = gguf_path.stem
-        repo_id = f"{publisher.name}/{stem}"
+        repo_id = f"{publisher.name}/{repo.name}"
 
         quant = detect_quant(gguf_path, "gguf")
         sha256_hex = _sha256_file(gguf_path)
