@@ -62,6 +62,7 @@ FILETYPE_MAP: dict[int, str] = {
     29: "IQ2_M",
     30: "IQ4_K_S",
     31: "IQ4_K_M",
+    32: "IQ4_K",
 }
 
 # GGUF value element sizes in bytes, keyed by type_id
@@ -372,8 +373,14 @@ def _skip_gguf_value(f, type_id: int) -> None:
         if len(elem_type_raw) >= 4 and len(count_raw) >= 8:
             elem_type = struct.unpack("<I", elem_type_raw)[0]
             count = struct.unpack("<Q", count_raw)[0]
-            esize = _GGUF_ELEM_SIZES.get(elem_type, 4)
-            f.read(count * esize)
+            if elem_type == 8:  # array of strings — variable length
+                for _ in range(count):
+                    sraw = f.read(8)
+                    if len(sraw) >= 8:
+                        f.read(struct.unpack("<Q", sraw)[0])
+            else:
+                esize = _GGUF_ELEM_SIZES.get(elem_type, 4)
+                f.read(count * esize)
     else:
         size = _GGUF_ELEM_SIZES.get(type_id, 0)
         if size > 0:

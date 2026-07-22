@@ -1,0 +1,136 @@
+{
+  "runId": "23879ee0-a9e2-4be6-acbc-0f7c0a69411c",
+  "agent": "reviewer",
+  "task": "[Read from: /Users/jeffersonsantos/Projects/model-shelf/plan.md, /Users/jeffersonsantos/Projects/model-shelf/progress.md]\n\nReview manifest command for CORRECTNESS and INTEGRATION.\n\n**Use Serena tools only.**\nWorker result: Output saved to: /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/23879ee0-a9e2-4be6-acbc-0f7c0a69411c/worker/manifest-result.md (4.2 KB, 65 lines). Read this file if needed.\n\n1. Does manifest.py correctly implement all 6 public functions?\n2. Does rebuild_manifest() correctly walk shelf, detect format, compute SHA256, build entries?\n3. Does save_manifest() use atomic write (temp + fsync + os.replace)?\n4. Does load_manifest() handle missing file, invalid JSON, wrong version?\n5. Did import_model.py correctly switch to importing from manifest.py? Any leftover _load_manifest/_save_manifest?\n6. Does cli.py wire the manifest subcommand correctly (--rebuild, --json flags)?\n7. Run pytest tests/ -v — verify zero regressions (expect 116+ tests).\n\nOutput: severity, file:line, fix. Do NOT modify files.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "deepseek/deepseek-v4-pro:high",
+  "attemptedModels": [
+    "deepseek/deepseek-v4-pro:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "deepseek/deepseek-v4-pro:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 24949,
+        "output": 7858,
+        "cacheRead": 288256,
+        "cacheWrite": 0,
+        "cost": 0.018734202999999998,
+        "turns": 13
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Concrete findings with file paths and severity: src/model_shelf/manifest.py:86-87 (note: latent array-skip bug in _skip_gguf_value, severity=low); src/model_shelf/manifest.py:57-69 & src/model_shelf/import_model.py:53-65 (note: duplicated _GGUF_ELEM_SIZES); src/model_shelf/manifest.py:133-142 & src/model_shelf/import_model.py:119-122 (note: _sha256_dir_for_rebuild vs _sha256_directory divergence by design). All 7 review questions answered with file:line evidence."
+        }
+      ],
+      "changedFiles": [
+        "src/model_shelf/manifest.py",
+        "src/model_shelf/__init__.py",
+        "src/model_shelf/cli.py",
+        "src/model_shelf/import_model.py",
+        "tests/test_manifest.py"
+      ],
+      "testsAddedOrUpdated": [
+        "tests/test_manifest.py (17 tests: 14 Tier 1 + 3 Tier 2)"
+      ],
+      "commandsRun": [
+        {
+          "command": ".venv/bin/python -m pytest tests/ -v",
+          "result": "passed",
+          "summary": "119 passed in 0.24s, zero regressions"
+        },
+        {
+          "command": "grep 'def _load_manifest\\|def _save_manifest' src/model_shelf/import_model.py",
+          "result": "passed",
+          "summary": "No matches — old function bodies removed"
+        },
+        {
+          "command": "grep 'import tempfile' src/model_shelf/import_model.py",
+          "result": "passed",
+          "summary": "No matches — unused import removed"
+        },
+        {
+          "command": "python -c 'import_model._load_manifest is manifest.load_manifest'",
+          "result": "passed",
+          "summary": "True — re-exports are identity references"
+        }
+      ],
+      "validationOutput": [
+        "All 6 public functions in manifest.py: load_manifest, save_manifest, get_manifest_entry, add_manifest_entry, remove_manifest_entry, rebuild_manifest — all correct.",
+        "rebuild_manifest: walks {gguf,mlx,safetensors}, format by parent dir, SHA256 via _sha256_file/_sha256_dir_for_rebuild, builds entries with repo_id/format/quant/sha256/files/size_bytes/params, preserves existing fields.",
+        "save_manifest: atomic via NamedTemporaryFile + os.fsync + os.replace, exception handler unlinks temp.",
+        "load_manifest: handles missing file (default dict), invalid JSON (ValueError), non-dict JSON (ValueError), wrong version (ValueError).",
+        "import_model.py: zero leftover _load_manifest/_save_manifest definitions, re-exports are identity references to manifest.py functions.",
+        "cli.py: cmd_manifest wired, --rebuild and --json flags, dispatch in main().",
+        "__init__.py: all 7 manifest names in __all__ and import block."
+      ],
+      "residualRisks": [
+        "manifest.py:86-87 — _skip_gguf_value array handling reads only 12 bytes (header) without skipping element data; if general.architecture appears after any array-type KV in a GGUF, _read_gguf_params misparses subsequent keys. Low severity: architecture is nearly always one of the first few KVs in real GGUF files.",
+        "Duplicate _GGUF_ELEM_SIZES in manifest.py and import_model.py — future change to one could drift from the other.",
+        "_sha256_dir_for_rebuild excludes .cache/ while _sha256_directory does not — same model could produce different SHA256 from import vs rebuild if .cache/ content is present. By design per spec but undocumented."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "5 files changed: +manifest.py (+330 lines), +test_manifest.py (+280 lines, 17 tests), import_model.py (-36/+2, re-exports replace old bodies), cli.py (+40, cmd_manifest + subparser + dispatch), __init__.py (+16, 7 exports). 119/119 tests pass, zero regressions.",
+      "reviewFindings": [
+        "no blockers",
+        "note: src/model_shelf/manifest.py:86-87 — _skip_gguf_value for arrays (type_id=9) reads only 12 bytes (elem_type+count headers) without skipping array element data. The import_model.py version (line 352-359) correctly computes count*esize. If general.architecture appears after an array KV, _read_gguf_params misreads. Low severity — architecture is nearly always among the first KVs in real GGUF files.",
+        "note: src/model_shelf/manifest.py:57-69 and src/model_shelf/import_model.py:53-65 — duplicate _GGUF_ELEM_SIZES dicts.",
+        "note: src/model_shelf/manifest.py:126-131 vs src/model_shelf/import_model.py:119-122 — _sha256_dir_for_rebuild excludes .cache/ subtrees while _sha256_directory does not. By design per rebuild spec but creates latent SHA256 inconsistency risk."
+      ],
+      "manualNotes": "The manifest.py _skip_gguf_value array handling differs from import_model.py in a way that is technically incorrect (only reads header, not elements). This is a latent bug that does not manifest in current tests because no test fixture includes array-type KVs before general.architecture. Recommend aligning manifest.py's _skip_gguf_value with import_model.py's version in a follow-up. The MLX+.safetensors design decision (format-by-directory, not by-contents) is correct and matches real-world mlx-community repositories."
+    }
+  },
+  "transcriptPath": "/Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/23879ee0-a9e2-4be6-acbc-0f7c0a69411c_reviewer_2_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784731981833
+}

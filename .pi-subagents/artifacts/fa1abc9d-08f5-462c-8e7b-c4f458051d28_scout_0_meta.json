@@ -1,0 +1,105 @@
+{
+  "runId": "fa1abc9d-08f5-462c-8e7b-c4f458051d28",
+  "agent": "scout",
+  "task": "Build handoff for Phase 4: dedup command.\n\n**NAVIGATION: Use Serena tools only.**\n\n**Read these files:**\n- src/model_shelf/import_model.py (_sha256_file, _sha256_directory, _ingest_file — dedup needs these)\n- src/model_shelf/manifest.py (load_manifest, save_manifest — dedup updates manifest hardlinks)\n- src/model_shelf/cli.py (cmd_* pattern, subparser registration)\n- .serena/memories/implementation_plan.md (Phase 4: dedup section)\n- .serena/memories/test_specs.md (Phase 4 section — 18 tests)\n- .serena/memories/conventions.md\n- /tmp/poc_dedup.py (hardened PoC — reference the working scan logic)\n\n**Write to handoff/dedup-command.md:**\n\n1. Files to CREATE:\n   - src/model_shelf/dedup.py (new module)\n   - tests/test_dedup.py (18 tests from spec)\n\n2. Files to MODIFY:\n   - src/model_shelf/cli.py (add dedup subcommand + cmd_dedup)\n   - src/model_shelf/__init__.py (add exports)\n\n3. API contract:\n   - DedupGroup dataclass (sha256, files, size_bytes, duplicate_bytes)\n   - DedupResult dataclass (groups, total_duplicate_bytes, potential_savings_bytes) with to_dict()\n   - find_duplicates(config, include_ollama=False, include_hf_cache=False) -> DedupResult\n   - execute_dedup(config, result) -> DedupResult (creates hardlinks, updates manifest)\n\n4. Key logic:\n   - Walk shelf + optional external locations, SHA256 all model files\n   - Group by SHA256, filter groups with >1 entry\n   - Check st_dev for same-fs before hardlink\n   - Keep shelf copy as canonical, os.link() others, os.unlink() originals\n   - NEVER unlink Ollama blobs or HF cache blobs (external sources)\n   - Update manifest hardlinks field\n\n5. Safety constraints:\n   - Dry-run default (--execute to actually dedup)\n   - Never hardlink across filesystems\n   - External blob paths are hardlink destinations, not sources\n\n6. DO NOT MODIFY: manifest.py, import_model.py, resolver.py, config.py, detect.py, relocate.py, search.py, existing tests\n\n---\n**Output:**\nWrite your findings to exactly this path: /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/fa1abc9d-08f5-462c-8e7b-c4f458051d28/handoff/dedup-command.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "deepseek/deepseek-v4-pro:low",
+  "attemptedModels": [
+    "deepseek/deepseek-v4-pro:low"
+  ],
+  "modelAttempts": [
+    {
+      "model": "deepseek/deepseek-v4-pro:low",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 33725,
+        "output": 13958,
+        "cacheRead": 354944,
+        "cacheWrite": 0,
+        "cost": 0.028100507000000004,
+        "turns": 12
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Returned concrete findings: 10 files retrieved with exact line ranges and reasoning; architecture diagram with data flow; API contract with full dataclass signatures and to_dict(); 5 safety constraints flagged as blockers; 3 open questions identified; 4 files to create/modify enumerated with specific insertion points and copyable code snippets"
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "mkdir -p /Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/outputs/fa1abc9d-08f5-462c-8e7b-c4f458051d28/handoff",
+          "result": "passed",
+          "summary": "Created output directory for handoff file"
+        }
+      ],
+      "validationOutput": [
+        "All required source files read and analyzed: import_model.py (SHA256 helpers, _ingest_file hardlink pattern lines 260-271), manifest.py (load/save/CRUD API), cli.py (subparser registration and cmd_* dispatch pattern), __init__.py (exports pattern), /tmp/poc_dedup.py (working scan logic with cross-fs detection), implementation_plan.md (Phase 4 spec), test_specs.md (19 tests across 3 tiers — spec header says 18 but lists 19 names), conventions.md, config.py (Config dataclass), detect.py (candidate pattern)"
+      ],
+      "residualRisks": [
+        "Cross-module import of _sha256_file from import_model.py creates a dependency that could complicate future refactoring — acceptable risk since both modules are in same package",
+        "Manifest hardlinks field update requires reverse-lookup from file path → repo_id, which is non-trivial for directory-based models — needs careful implementation and Tier 2 testing",
+        "execute_dedup must handle partial failure: if os.link fails mid-group, remaining files should still be processed — recommend try/except per-file with error logging",
+        "Spec header says 18 tests but test_specs.md Phase 4 lists 19 individual test names (6 Tier 1 + 10 Tier 2 + 3 Tier 3) — the handoff includes all 19"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Handoff document written to output path. No code changes made — this is a scouting-only handoff.",
+      "reviewFindings": [
+        "no blockers — all source files readable and consistent with the implementation plan"
+      ],
+      "manualNotes": "The PoC has a 10MB minimum file size threshold and MODEL_EXTS filtering that are NOT in the Phase 4 spec. The handoff recommends hashing all files without size or extension filters for correctness. The PoC also uses os.link() + os.unlink() sequentially, but os.replace() with a temp hardlink is safer (atomic). The implementation plan mentions st_nlink counts in tests — note that os.link + os.replace means the old inode at the target path is replaced, so the canonical inode survives."
+    }
+  },
+  "transcriptPath": "/Users/jeffersonsantos/Projects/model-shelf/.pi-subagents/artifacts/fa1abc9d-08f5-462c-8e7b-c4f458051d28_scout_0_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784732730525
+}
