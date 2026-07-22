@@ -277,15 +277,25 @@ def should_skip_shelf_path(path: Path) -> bool:
     Rules (conservative, shared by audit and GC):
       - macOS resource forks:  ._ prefix on filename
       - .cache/ anywhere in path (HF resumability metadata)
-      - Dot-prefixed directories anywhere in path (hidden dirs)
+      - Dot-prefixed directories BELOW the format level
+        (gguf/, mlx/, safetensors/) — shelf root like ~/.models is OK.
     """
     if path.name.startswith("._"):
         return True
-    for part in path.parts:
+    # Only check components below the format directory level.
+    # The shelf root itself may be a dot-directory (e.g. ~/.models).
+    parts = path.parts
+    for i, part in enumerate(parts):
         if part.startswith(".cache"):
             return True
-        if part.startswith(".") and part != "." and part != "..":
-            return True
+        # Skip dot-dirs, but only below the format level (gguf/mlx/safetensors).
+        # The format dir is typically 3 levels deep: /home/user/.models/gguf/...
+        # Allow the shelf root itself to be a dot-directory.
+        if part.startswith(".") and part not in (".", ".."):
+            # Check if we're past the format-directory level
+            # (i.e., after gguf/, mlx/, or safetensors/)
+            if any(parts[j] in ("gguf", "mlx", "safetensors") for j in range(i)):
+                return True
     return False
 
 
