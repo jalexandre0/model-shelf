@@ -1,0 +1,604 @@
+#!/usr/bin/env python3
+"""Standalone migration script: scan scattered model files, detect duplicates,
+and import them into the model-shelf curated structure.
+
+Uses only Python stdlib. Calls the ``model-shelf`` CLI as a subprocess for
+import and manifest rebuild.  Read-only by default (--dry-run).  Use --execute
+to perform the actual migration.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import re
+import struct
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+MODEL_EXTENSIONS: frozenset[str] = frozenset(
+    {".gguf", ".safetensors", ".bin", ".pt", ".pth", ".onnx"}
+)
+
+KNOWN_PUBLISHERS: frozenset[str] = frozenset(
+    {"bartowski", "mlx-community", "lmstudio-community", "unsloth"}
+)
+
+DEFAULT_LOCATIONS: dict[str, Path] = {
+    "models": Path.home() / "models",
+    "hf-cache": Path.home() / ".cache" / "huggingface" / "hub",
+    "lmstudio": Path.home() / ".lmstudio",
+    "ollama-blobs": Path.home() / ".ollama" / "models" / "blobs",
+    "ollama-manifest": Path.home() / ".ollama" / "models" / "manifests",
+    "omlx": Path.home() / ".omlx" / "models",
+    "model-shelf": Path.home() / ".cache" / "model-shelf" / "models",
+}
+
+MIN_FILE_BYTES: int = 10_000_000  # 10 MB
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers — SHA256, GGUF magic
+# ---------------------------------------------------------------------------
+
+
+def sha256_file(path: Path) -> str:
+    """Return lowercase hex SHA256 digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def is_gguf(path: Path) -> bool:
+    """Check GGUF magic bytes without raising."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"GGUF"
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Format detection (standalone – mirrors import_model.py logic)
+# ---------------------------------------------------------------------------
+
+
+def detect_format_from_path(source: Path) -> str:
+    """Detect model format from a local file or directory.
+
+    Rules:
+        1. File ending in .gguf → "gguf"
+        2. Directory with config.json + *.safetensors → "safetensors"
+        3. Directory with config.json but no safetensors files → "mlx"
+        4. Directory without config.json → ValueError
+        5. Non-.gguf file → ValueError
+
+    Uses suffix-based heuristics for non-existent paths so tests can pass
+    bare ``Path("model.gguf")`` objects.
+    """
+    # If the path actually exists on disk, use real stat.
+    if source.exists():
+        if source.is_file():
+            # Check GGUF magic bytes, not extension.
+            # Ollama blobs and content-addressed files have no .gguf extension.
+            try:
+                with open(source, "rb") as f:
+                    if f.read(4) == b"GGUF":
+                        return "gguf"
+            except OSError:
+                pass
+            raise ValueError(
+                f"unsupported file type for import: {source.suffix or '<no extension>'}; "
+                "only .gguf files are supported for single-file import"
+            )
+        if source.is_dir():
+            has_config = (source / "config.json").is_file()
+            if not has_config:
+                raise ValueError(
+                    f"directory lacks config.json — cannot determine format: {source}"
+                )
+            safetensors_files = list(source.glob("*.safetensors"))
+            if safetensors_files:
+                return "safetensors"
+            return "mlx"
+        raise ValueError(f"source path is not a file or directory: {source}")
+
+    # Non-existent path — use suffix heuristic.
+    if source.suffix.lower() == ".gguf":
+        return "gguf"
+    raise ValueError(
+        f"path does not exist and is not a .gguf file: {source}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Org / repo inference (standalone – mirrors import_model.py logic)
+# ---------------------------------------------------------------------------
+
+
+def infer_org_repo(path: Path) -> tuple[str, str]:
+    """Infer (org, repo) from a model path.
+
+    For file-like paths (have an extension): looks at parent dirs for known
+    publisher patterns, repo = parent dir name.
+    For directory-like paths (no extension): repo = dir name, looks at parent
+    and grandparent for known publisher patterns.
+    Falls back to org="local", repo=<dirname or stem>.
+    """
+    # Use suffix to decide file vs dir — Path.is_file() returns False for
+    # non-existent paths, so we can't rely on it in tests.
+    if path.suffix:
+        # File-like path (e.g. model.gguf, model.safetensors)
+        repo_dir = path.parent
+        publisher_dir = repo_dir.parent
+        repo = repo_dir.name
+    else:
+        # Directory-like path (e.g. Qwen3-14B-4bit/)
+        repo_dir = path
+        publisher_dir = repo_dir.parent
+        repo = repo_dir.name
+
+    publisher_name = publisher_dir.name.lower()
+
+    # Known publisher dir
+    if publisher_name in KNOWN_PUBLISHERS:
+        return publisher_dir.name, repo
+
+    # Dir with hyphen (heuristic for community publishers)
+    if "-" in publisher_name:
+        return publisher_dir.name, repo
+
+    # Check grandparent for nested structures like …/mlx-community/repo/
+    grandparent_name = publisher_dir.parent.name.lower()
+    if grandparent_name in KNOWN_PUBLISHERS:
+        return publisher_dir.parent.name, repo
+
+    return "local", repo
+
+
+# ---------------------------------------------------------------------------
+# Quant detection from filename (standalone – mirrors import_model.py)
+# ---------------------------------------------------------------------------
+
+
+_QUANT_PATTERNS: list[tuple[str, int]] = [
+    (r"(q[2-8]_[klo]_[ms])", 1),      # Q4_K_M, Q5_K_L (3-segment, MUST come first)
+    (r"(q[2-8]_[0-1])", 1),            # Q5_0, Q8_0
+    (r"(q[2-8]_k)(?![a-z0-9])", 1),   # Q2_K, Q6_K, Q8_K (2-segment, no trailing char)
+    (r"(iq[1-4]_[a-z]+)", 1),          # IQ3_XXS, IQ4_XS
+    (r"(f16|f32|fp16|fp32)", 1),       # F16, F32
+]
+
+
+def detect_quant_from_filename(path: Path) -> tuple[str, str | None]:
+    """Extract quant tag and stripped model name from a GGUF filename.
+
+    Returns (model_name_without_quant, quant) or (stem, None).
+    Examples:
+        Qwen3-14B-Q4_K_M.gguf → ("Qwen3-14B", "Q4_K_M")
+        qwen3-8b-q5_1.gguf    → ("qwen3-8b", "Q5_1")
+        model.gguf             → ("model", None)
+    """
+    stem = path.stem
+    name_lower = stem.lower()
+
+    for pat, _ in _QUANT_PATTERNS:
+        m = re.search(pat, name_lower)
+        if m:
+            quant = m.group(1).upper()
+            # Strip quant (and any trailing dash/underscore) from the name
+            prefix = stem[: m.start()].rstrip("-_")
+            suffix = stem[m.end() :].lstrip("-_")
+            model_name = (prefix + suffix).strip("-_") if suffix else prefix
+            return model_name if model_name else stem, quant
+
+    return stem, None
+
+
+# ---------------------------------------------------------------------------
+# Scan
+# ---------------------------------------------------------------------------
+
+
+def scan_locations(
+    locations: dict[str, Path] | None = None,
+) -> list[tuple[str, Path, int]]:
+    """Walk every configured location and return (label, path, size_bytes) tuples.
+
+    Skips dot-prefixed files (except .gguf), macOS resource forks (._*),
+    and .cache subdirs within already-scanned roots.
+    """
+    if locations is None:
+        locations = DEFAULT_LOCATIONS
+
+    files: list[tuple[str, Path, int]] = []
+    for label, root in locations.items():
+        if not root.is_dir():
+            continue
+        for f in root.rglob("*"):
+            if not f.is_file():
+                continue
+            if f.name.startswith("._"):
+                continue
+            if f.name.startswith(".") and f.name != ".gguf":
+                continue
+            # Skip .cache dirs nested inside an already-scanned root
+            try:
+                rel = f.relative_to(root)
+            except ValueError:
+                continue
+            if ".cache" in rel.parts:
+                continue
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            files.append((label, f, st.st_size))
+
+    return files
+
+
+def _is_model_like(path: Path, size: int) -> bool:
+    """Return True if the file looks like a model worth hashing."""
+    if size < MIN_FILE_BYTES:
+        return False
+    ext = path.suffix.lower()
+    if ext in MODEL_EXTENSIONS:
+        return True
+    if is_gguf(path):
+        return True
+    # Extensionless blobs (e.g. Ollama sha256-xxx, HF cache blobs)
+    if ext == "":
+        return True
+    return False
+
+
+def build_sha256_index(
+    files: list[tuple[str, Path, int]],
+) -> dict[str, list[tuple[str, Path, int]]]:
+    """Group scanned files by SHA256 digest.
+
+    Only hashes files that pass ``_is_model_like``.
+    """
+    index: dict[str, list[tuple[str, Path, int]]] = defaultdict(list)
+    for label, path, size in files:
+        if not _is_model_like(path, size):
+            continue
+        try:
+            dig = sha256_file(path)
+        except OSError:
+            continue
+        index[dig].append((label, path, size))
+    return dict(index)
+
+
+# ---------------------------------------------------------------------------
+# Duplicate analysis
+# ---------------------------------------------------------------------------
+
+
+def find_duplicate_groups(
+    sha_index: dict[str, list[tuple[str, Path, int]]],
+) -> tuple[
+    list[tuple[str, str, Path, int]],          # unique: [(sha256, label, path, size)]
+    list[dict[str, Any]],                       # duplicate groups
+]:
+    """Split SHA index into unique entries and duplicate groups.
+
+    A duplicate group has the form:
+        {"sha256": str, "entries": [...], "size_bytes": int, "waste_bytes": int}
+    """
+    uniques: list[tuple[str, str, Path, int]] = []
+    dup_groups: list[dict[str, Any]] = []
+
+    for sha, entries in sha_index.items():
+        if len(entries) == 1:
+            label, path, size = entries[0]
+            uniques.append((sha, label, path, size))
+        else:
+            size_bytes = entries[0][2]  # first entry's size
+            waste = (len(entries) - 1) * size_bytes
+            dup_groups.append(
+                {
+                    "sha256": sha,
+                    "entries": entries,
+                    "size_bytes": size_bytes,
+                    "waste_bytes": waste,
+                }
+            )
+
+    return uniques, dup_groups
+
+
+# ---------------------------------------------------------------------------
+# Table / output
+# ---------------------------------------------------------------------------
+
+
+def _fmt_size(n: int) -> str:
+    if n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.1f} GB"
+    return f"{n / 1_000_000:.1f} MB"
+
+
+def generate_table(
+    uniques: list[tuple[str, str, Path, int]],
+    dup_groups: list[dict[str, Any]],
+) -> str:
+    """Build the migration report table string."""
+    lines: list[str] = []
+    header = f"{'Model':<60} {'Size':>10}  {'SHA256':>8}  {'Status':>14}"
+    sep = f"{'─' * 60} {'─' * 10}  {'─' * 8}  {'─' * 14}"
+    lines.append(header)
+    lines.append(sep)
+
+    for sha, label, path, size in uniques:
+        name = path.stem if path.suffix in (".gguf", ".safetensors") else path.parent.name
+        display = f"[{label}] {name}"
+        lines.append(
+            f"{display:<60} {_fmt_size(size):>10}  {sha[:8]:>8}  {'[UNIQUE]':>14}"
+        )
+
+    for group in dup_groups:
+        sha = group["sha256"]
+        size = group["size_bytes"]
+        entries: list = group["entries"]
+        canonical = entries[0]
+        for i, (label, path, _) in enumerate(entries):
+            name = path.stem if path.suffix in (".gguf", ".safetensors") else path.parent.name
+            display = f"[{label}] {name}"
+            tag = "[ORIGINAL]" if i == 0 else "[DUPLICATE]"
+            lines.append(
+                f"{display:<60} {_fmt_size(size):>10}  {sha[:8]:>8}  {tag:>14}"
+            )
+
+    lines.append("")
+    lines.append(f"Unique models:    {len(uniques)}")
+    lines.append(f"Duplicate groups: {len(dup_groups)}")
+    total_waste = sum(g["waste_bytes"] for g in dup_groups)
+    lines.append(f"Total waste:      {_fmt_size(total_waste)}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Execute: import + hardlink
+# ---------------------------------------------------------------------------
+
+
+def execute_import(
+    path: Path,
+    org: str | None = None,
+    repo: str | None = None,
+) -> bool:
+    """Call ``model-shelf import <path> --execute`` as a subprocess.
+
+    Returns True on success (exit code 0), False on failure.
+    """
+    cmd = ["model-shelf", "import", str(path), "--execute"]
+    if org:
+        cmd.extend(["--org", org])
+    if repo:
+        cmd.extend(["--repo", repo])
+    try:
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def execute_hardlink(canonical: Path, target: Path) -> bool:
+    """Atomically replace *target* with a hardlink to *canonical*.
+
+    Returns True on success, False if cross-filesystem or other error.
+    Never unlinks external blobs (ollama, hf-cache) — only hardlinks them.
+    """
+    try:
+        if canonical.stat().st_dev != target.stat().st_dev:
+            print(
+                f"  [skip] cross-filesystem: {target}",
+                file=sys.stderr,
+            )
+            return False
+        if canonical.stat().st_ino == target.stat().st_ino:
+            # Already same inode — already hardlinked
+            return True
+    except OSError:
+        return False
+
+    tmp = target.with_suffix(target.suffix + ".msmigrate")
+    try:
+        os.link(str(canonical), str(tmp))
+        os.replace(str(tmp), str(target))
+        return True
+    except OSError:
+        return False
+    finally:
+        if tmp.exists():
+            try:
+                os.unlink(str(tmp))
+            except OSError:
+                pass
+
+
+def execute_manifest_rebuild() -> bool:
+    """Call ``model-shelf manifest --rebuild`` as a subprocess."""
+    try:
+        subprocess.run(["model-shelf", "manifest", "--rebuild"], check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="Migrate scattered model files into the model-shelf curated structure.",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Scan and report only — no changes (default).",
+    )
+    p.add_argument(
+        "--execute",
+        action="store_true",
+        default=False,
+        help="Perform actual migration (import + hardlink + manifest rebuild).",
+    )
+    p.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output results as JSON.",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    # --execute overrides --dry-run
+    dry_run = not args.execute
+
+    # 1. Scan
+    print("Scanning model locations …", file=sys.stderr)
+    files = scan_locations()
+    print(f"  Found {len(files)} files", file=sys.stderr)
+
+    # 2. Hash
+    print("Computing SHA256 for model-like files >10 MB …", file=sys.stderr)
+    sha_index = build_sha256_index(files)
+    print(f"  Hashed {sum(len(v) for v in sha_index.values())} files", file=sys.stderr)
+
+    # 3. Dedup analysis
+    uniques, dup_groups = find_duplicate_groups(sha_index)
+
+    # 4. Table
+    table = generate_table(uniques, dup_groups)
+
+    if args.json:
+        import json
+
+        output = {
+            "unique_count": len(uniques),
+            "duplicate_groups": len(dup_groups),
+            "total_waste_bytes": sum(g["waste_bytes"] for g in dup_groups),
+            "uniques": [
+                {"sha256": sha, "label": label, "path": str(path), "size_bytes": size}
+                for sha, label, path, size in uniques
+            ],
+            "duplicates": [
+                {
+                    "sha256": g["sha256"],
+                    "size_bytes": g["size_bytes"],
+                    "waste_bytes": g["waste_bytes"],
+                    "entries": [
+                        {"label": label, "path": str(path), "size_bytes": sz}
+                        for label, path, sz in g["entries"]
+                    ],
+                }
+                for g in dup_groups
+            ],
+        }
+        print(json.dumps(output, indent=2))
+        return 0
+
+    print(table)
+
+    if dry_run:
+        print("\n[dry-run] No changes made. Use --execute to perform migration.")
+        return 0
+
+    # 5. Execute import for uniques
+    imported = 0
+    failed = 0
+    imported_sha: set[str] = set()
+
+    print("\nImporting unique models …", file=sys.stderr)
+    for sha, label, path, size in uniques:
+        if sha in imported_sha:
+            continue
+
+        # Infer org/repo for the import command
+        try:
+            fmt = detect_format_from_path(path)
+        except ValueError:
+            fmt = "gguf"  # best guess for extensionless blobs
+
+        org, repo = infer_org_repo(path)
+
+        print(f"  Importing [{label}] {path.name} …", file=sys.stderr)
+        if execute_import(path, org=org, repo=repo):
+            imported += 1
+            imported_sha.add(sha)
+            print(f"    → {org}/{repo}", file=sys.stderr)
+        else:
+            failed += 1
+            print(f"    → FAILED", file=sys.stderr)
+
+    # 6. Hardlink duplicates
+    hardlinks_created = 0
+    if dup_groups:
+        print("\nHardlinking duplicates …", file=sys.stderr)
+        shelf_root = DEFAULT_LOCATIONS["model-shelf"]
+        for group in dup_groups:
+            entries: list = group["entries"]
+            # Find canonical — prefer shelf copy, then models/, then first
+            canonical: tuple[str, Path, int] | None = None
+            for entry in entries:
+                label, path, _ = entry
+                if label == "model-shelf":
+                    canonical = entry
+                    break
+            if canonical is None:
+                for entry in entries:
+                    label, path, _ = entry
+                    if label == "models":
+                        canonical = entry
+                        break
+            if canonical is None:
+                canonical = entries[0]
+
+            _, canon_path, _ = canonical
+            for label, path, _ in entries:
+                if path.resolve() == canon_path.resolve():
+                    continue
+                if execute_hardlink(canon_path, path):
+                    hardlinks_created += 1
+                    print(f"  Hardlinked [{label}] {path.name}", file=sys.stderr)
+
+    # 7. Manifest rebuild
+    print("\nRebuilding manifest …", file=sys.stderr)
+    if execute_manifest_rebuild():
+        print("  Done.", file=sys.stderr)
+
+    # 8. Report
+    total_waste = sum(g["waste_bytes"] for g in dup_groups)
+    print(f"\nMigration complete:")
+    print(f"  {imported} models imported to {DEFAULT_LOCATIONS['model-shelf']}")
+    print(f"  {_fmt_size(total_waste)} recovered via hardlinking {hardlinks_created} duplicates")
+    if failed:
+        print(f"  {failed} imports failed")
+    print(f'  Run `model-shelf list` to see your shelf')
+
+    return 0 if not failed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

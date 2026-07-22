@@ -436,17 +436,14 @@ def cmd_gc(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_migrate(args: argparse.Namespace) -> int:
-    """Run the standalone migration script — scan, dedup, import."""
-    import runpy
-    from pathlib import Path as _Path
-    script = _Path(__file__).resolve().parent.parent.parent / "scripts" / "model-shelf-migrate"
-    sys.argv = [
-        str(script),
+    """Run the migration scan — scan, dedup, import."""
+    from model_shelf.migrate import main as migrate_main
+    migrate_argv = [
+        "model-shelf-migrate",
         *(["--json"] if args.json else []),
         *(["--execute"] if args.execute else []),
     ]
-    runpy.run_path(str(script), run_name="__main__")
-    return 0
+    return migrate_main(migrate_argv)
 
 
 def cmd_update() -> int:
