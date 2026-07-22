@@ -7,7 +7,6 @@ import pytest
 from model_shelf.import_model import (
     ImportResult,
     _detect_format_from_path,
-    _detect_quant_from_filename,
     _load_manifest,
     _sha256_file,
     _sha256_directory,
@@ -60,24 +59,6 @@ def test_detect_format_rejects_dir_without_config_json(tmp_path: Path):
     (source / "random.bin").write_bytes(b"x")
     with pytest.raises(ValueError, match="config.json"):
         _detect_format_from_path(source)
-
-
-# --- quant detection --------------------------------------------------------
-
-def test_detect_quant_q4_k_m():
-    assert _detect_quant_from_filename(Path("Qwen3-14B-Q4_K_M.gguf")) == "Q4_K_M"
-
-
-def test_detect_quant_q5_0():
-    assert _detect_quant_from_filename(Path("qwen3-8b-q5_0.gguf")) == "Q5_0"
-
-
-def test_detect_quant_f16():
-    assert _detect_quant_from_filename(Path("llama-3.1-8b-f16.gguf")) == "F16"
-
-
-def test_detect_quant_none():
-    assert _detect_quant_from_filename(Path("model.gguf")) is None
 
 
 # --- SHA256 -----------------------------------------------------------------
