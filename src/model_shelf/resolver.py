@@ -164,6 +164,26 @@ def hf_filename(repo_id: str, quant: str) -> str:
     return f"{name}-{quant}.gguf"
 
 
+def _find_gguf_filename(repo_id: str, quant: str) -> str:
+    """Find the actual GGUF filename on HuggingFace Hub matching *quant*.
+
+    HF repos can have filenames with different casing than the repo name
+    (e.g. repo "Ornith-1.0-9B-GGUF" but file "ornith-1.0-9b-Q4_K_M.gguf").
+    Instead of guessing, list repo files and match by quant pattern.
+    Falls back to *hf_filename* if listing fails.
+    """
+    try:
+        from huggingface_hub import list_repo_files
+        files = list_repo_files(repo_id)
+        pattern = quant.lower()
+        for f in files:
+            if f.lower().endswith(".gguf") and pattern in f.lower():
+                return f
+    except Exception:
+        pass
+    return hf_filename(repo_id, quant)
+
+
 def shelf_path_gguf(shelf_root: Path, repo_id: str, quant: str) -> Path:
     """Shelf path for a GGUF model: <root>/gguf/<publisher>/<repo>/<file>.gguf."""
     publisher, repo = _split_repo_id(repo_id)
@@ -322,7 +342,7 @@ def _resolve_gguf(config: Config, repo_id: str, quant: str) -> ResolveResult:
     # Download into the primary shelf at <root>/gguf/<publisher>/<repo>/.
     final = shelf_path_gguf(config.shelf_root, repo_id, quant)
     final.parent.mkdir(parents=True, exist_ok=True)
-    hf_name = hf_filename(repo_id, quant)
+    hf_name = _find_gguf_filename(repo_id, quant)
     hf_hub_download(
         repo_id=repo_id,
         filename=hf_name,
