@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 
 from pathlib import Path
@@ -287,6 +289,151 @@ def _print_dedup_report(result: DedupResult) -> None:
             print(f"    {f}{mark}")
 
 
+def cmd_audit(args: argparse.Namespace, cfg: Config) -> int:
+    """Cross-reference manifest against filesystem."""
+    from model_shelf.audit import AuditResult, run_audit  # noqa: PLC0415
+
+    result = run_audit(cfg)
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(
+            f"Audit: {len(result.missing)} missing, {len(result.stale)} stale, "
+            f"{len(result.untracked)} untracked"
+        )
+        if result.missing:
+            print("\nMissing (manifest entry, files gone):")
+            for repo_id in result.missing:
+                print(f"  {repo_id}")
+        if result.stale:
+            print("\nStale (SHA256 mismatch):")
+            for repo_id in result.stale:
+                print(f"  {repo_id}")
+        if result.untracked:
+            print("\nUntracked (on disk, not in manifest):")
+            for path in result.untracked:
+                print(f"  {path}")
+        if not result.missing and not result.stale and not result.untracked:
+            print("Shelf is clean — no issues found.")
+    return 0 if (
+        not result.missing and not result.stale and not result.untracked
+    ) else 1
+
+
+def cmd_remove(args: argparse.Namespace, cfg: Config) -> int:
+    """Remove a model from the shelf."""
+    from model_shelf.remove import RemoveResult, remove_model  # noqa: PLC0415
+
+    result = remove_model(cfg, args.repo_id, dry_run=not args.execute)
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        action = "Would remove" if not args.execute else "Removed"
+        if result.removed:
+            print(f"{action}:")
+            for p in result.removed:
+                print(f"  {p}")
+        if result.hardlinks_warn:
+            print("Hardlink warnings:")
+            for w in result.hardlinks_warn:
+                print(f"  {w}")
+        if not result.removed and not result.hardlinks_warn:
+            print("No files to remove.")
+    return 0
+
+
+def _print_gc_report(result, *, dry_run: bool) -> None:
+    prefix = "Would clean" if dry_run else "Cleaned"
+    total = (
+        len(result.incomplete_downloads)
+        + len(result.orphaned_files)
+        + len(result.empty_dirs)
+    )
+    print(
+        f"{prefix} {total} items "
+        f"({_fmt_size(result.total_reclaimable_bytes)} reclaimable):"
+    )
+    if result.incomplete_downloads:
+        print(
+            f"\n  Incomplete downloads ({len(result.incomplete_downloads)}):"
+        )
+        for p in result.incomplete_downloads:
+            print(f"    {p}")
+    if result.orphaned_files:
+        print(f"\n  Orphaned files ({len(result.orphaned_files)}):")
+        for p in result.orphaned_files:
+            print(f"    {p}")
+    if result.empty_dirs:
+        print(f"\n  Empty directories ({len(result.empty_dirs)}):")
+        for p in result.empty_dirs:
+            print(f"    {p}")
+
+
+def cmd_gc(args: argparse.Namespace, cfg: Config) -> int:
+    """Find and clean up incomplete downloads, orphans, empty dirs."""
+    from model_shelf.gc import GCResult, run_gc  # noqa: PLC0415
+    from model_shelf.remove import cleanup_empty_parents  # noqa: PLC0415
+
+    result = run_gc(cfg)
+    if not args.execute:
+        if args.json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            _print_gc_report(result, dry_run=True)
+        return 0
+
+    # --execute path
+    removed_count = 0
+    removed_bytes = 0
+
+    # Remove orphaned files
+    for fpath_str in result.orphaned_files:
+        fpath = Path(fpath_str)
+        try:
+            st = fpath.stat()
+            os.unlink(fpath)
+            removed_count += 1
+            removed_bytes += st.st_size
+        except OSError:
+            pass
+
+    # Remove incomplete download dirs
+    for dpath_str in result.incomplete_downloads:
+        dpath = Path(dpath_str)
+        try:
+            shutil.rmtree(dpath)
+        except OSError:
+            pass
+
+    # Remove empty dirs (post-order, deepest first)
+    empty_sorted = sorted(
+        result.empty_dirs, key=lambda p: -len(Path(p).parts)
+    )
+    for dpath_str in empty_sorted:
+        dpath = Path(dpath_str)
+        try:
+            if dpath.is_dir() and not any(dpath.iterdir()):
+                dpath.rmdir()
+        except OSError:
+            pass
+
+    # Clean up empty parent dirs after orphan/incomplete removal
+    for fpath_str in result.orphaned_files:
+        cleanup_empty_parents(cfg.shelf_root, Path(fpath_str).parent)
+    for dpath_str in result.incomplete_downloads:
+        cleanup_empty_parents(cfg.shelf_root, Path(dpath_str))
+
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        _print_gc_report(result, dry_run=False)
+        print(
+            f"Removed {removed_count} files "
+            f"({_fmt_size(removed_bytes)} reclaimed)"
+        )
+    return 0
+
+
 def cmd_find(args: argparse.Namespace, cfg: Config) -> int:
     results = find_models(args.query, format=args.format, limit=args.limit)
     if args.json:
@@ -441,6 +588,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_import.add_argument("--json", action="store_true", help="emit JSON")
 
+    p_audit = sub.add_parser("audit", help="cross-check manifest vs filesystem")
+    p_audit.add_argument("--json", action="store_true", help="emit JSON")
+
+    p_remove = sub.add_parser("remove", help="remove a model from the shelf")
+    p_remove.add_argument("repo_id", help='e.g. "Qwen/Qwen3-14B-GGUF"')
+    p_remove.add_argument(
+        "--execute", action="store_true",
+        help="actually delete (default dry-run)",
+    )
+    p_remove.add_argument("--json", action="store_true", help="emit JSON")
+
+    p_gc = sub.add_parser(
+        "gc", help="find and clean up incomplete downloads, orphans, empty dirs"
+    )
+    p_gc.add_argument(
+        "--execute", action="store_true",
+        help="actually delete (default dry-run)",
+    )
+    p_gc.add_argument("--json", action="store_true", help="emit JSON")
+
     p_init = sub.add_parser(
         "init",
         help="create the shelf directory (optionally at a new path)",
@@ -469,6 +636,12 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_manifest(args, cfg)
         if args.command == "dedup":
             return cmd_dedup(args, cfg)
+        if args.command == "audit":
+            return cmd_audit(args, cfg)
+        if args.command == "remove":
+            return cmd_remove(args, cfg)
+        if args.command == "gc":
+            return cmd_gc(args, cfg)
     except StorageNotAvailableError as e:
         print(f"model-shelf: {e}", file=sys.stderr)
         return 2
